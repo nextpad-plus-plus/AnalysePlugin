@@ -190,7 +190,10 @@ static NSTextField *mkLabel(NSString *s) {
     _table.allowsColumnReordering = YES;
     _table.allowsColumnResizing = YES;
     _table.allowsMultipleSelection = NO;
-    _table.rowHeight = 16;
+    _table.rowHeight = 13;                                  // compact rows
+    _table.intercellSpacing = NSMakeSize(2, 0);
+    _table.gridStyleMask = NSTableViewSolidVerticalGridLineMask;
+    if (@available(macOS 11.0, *)) _table.style = NSTableViewStylePlain;
     _table.dataSource = self;
     _table.delegate = self;
     _table.columnAutoresizingStyle = NSTableViewNoColumnAutoresizing;
@@ -205,7 +208,7 @@ static NSTextField *mkLabel(NSString *s) {
         NSTableColumn *tc = [[NSTableColumn alloc] initWithIdentifier:c.ident];
         tc.title = c.title;
         tc.width = c.w;
-        tc.headerCell.font = [NSFont systemFontOfSize:11];
+        tc.headerCell.font = [NSFont systemFontOfSize:10];
         [_table addTableColumn:tc];
     }
     scroll.documentView = _table;
@@ -638,9 +641,10 @@ static NSTextField *mkLabel(NSString *s) {
         cell = [[NSTableCellView alloc] initWithFrame:NSZeroRect];
         cell.identifier = @"cell";
         NSTextField *tf = [NSTextField labelWithString:@""];
-        tf.font = [NSFont systemFontOfSize:11];
+        tf.font = [NSFont systemFontOfSize:10];
         tf.translatesAutoresizingMaskIntoConstraints = NO;
         tf.drawsBackground = YES;
+        tf.cell.lineBreakMode = NSLineBreakByTruncatingTail;
         [cell addSubview:tf];
         cell.textField = tf;
         [NSLayoutConstraint activateConstraints:@[

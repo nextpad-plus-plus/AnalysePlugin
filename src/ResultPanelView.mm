@@ -20,7 +20,7 @@
 #define SC_MARGE_SYMBOL     1
 #define SC_MARGE_FOLDER     2
 
-@interface ResultPanelView () <ScintillaNotificationProtocol>
+@interface ResultPanelView () <ScintillaNotificationProtocol, NSMenuDelegate, NSTextFieldDelegate>
 @end
 
 @implementation ResultPanelView {
@@ -39,6 +39,15 @@
     BOOL    _fromFindResult;             // result scroll/jump drives main
     NSString *_searchFileName;
     int     _styleIdTab[MY_STYLE_COUNT]; // transStyleIdTab
+
+    // Filter bar (incremental HIDELINES filter, like the host Search Results panel).
+    NSView      *_filterBar;
+    NSTextField *_filterField;
+    NSButton    *_filterMatchCase;
+    NSButton    *_filterWholeWord;
+    NSLayoutConstraint *_filterBarHeight;
+
+    NSString *_saveFilePath;             // remembered "Save to file" target
 }
 
 - (instancetype)initWithController:(AnalyseController *)controller {
@@ -84,10 +93,22 @@
         return;
     }
     _sci = [[scintillaClass alloc] initWithFrame:self.bounds];
-    _sci.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    _sci.translatesAutoresizingMaskIntoConstraints = NO;
     [self addSubview:_sci];
     _sci.delegate = self;
     _sci.scrollView.autohidesScrollers = YES;   // overlay scrollers — don't reserve space
+
+    [self buildFilterBar];
+
+    // _sci fills the panel above the (collapsible) filter bar.
+    [NSLayoutConstraint activateConstraints:@[
+        [_sci.topAnchor constraintEqualToAnchor:self.topAnchor],
+        [_sci.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [_sci.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [_sci.bottomAnchor constraintEqualToAnchor:_filterBar.topAnchor],
+    ]];
+
+    _sci.menu = [self buildContextMenu];
 
     // Container styling — we colour the buffer ourselves on SCN_STYLENEEDED.
     [self sci:SCI_SETILEXER wParam:0 lParam:(intptr_t)0];   // null lexer
@@ -442,6 +463,236 @@
         [self.window makeFirstResponder:_sci];
     }
     (void)opened;
+}
+
+// ── Filter bar (HIDELINES filter, like the host Search Results panel) ───────
+- (void)buildFilterBar {
+    _filterBar = [[NSView alloc] initWithFrame:NSZeroRect];
+    _filterBar.translatesAutoresizingMaskIntoConstraints = NO;
+    _filterBar.wantsLayer = YES;
+    _filterBar.layer.backgroundColor = NSColor.controlBackgroundColor.CGColor;
+    [self addSubview:_filterBar];
+
+    NSTextField *findLbl = [NSTextField labelWithString:@"Find:"];
+    findLbl.font = [NSFont systemFontOfSize:11];
+    findLbl.translatesAutoresizingMaskIntoConstraints = NO;
+    _filterField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    _filterField.font = [NSFont systemFontOfSize:11];
+    _filterField.placeholderString = @"Type to filter…";
+    _filterField.translatesAutoresizingMaskIntoConstraints = NO;
+    _filterField.delegate = self;
+    _filterMatchCase = [NSButton checkboxWithTitle:@"Match case" target:self action:@selector(refilter:)];
+    _filterMatchCase.font = [NSFont systemFontOfSize:11];
+    _filterMatchCase.translatesAutoresizingMaskIntoConstraints = NO;
+    _filterWholeWord = [NSButton checkboxWithTitle:@"Whole word" target:self action:@selector(refilter:)];
+    _filterWholeWord.font = [NSFont systemFontOfSize:11];
+    _filterWholeWord.translatesAutoresizingMaskIntoConstraints = NO;
+    NSButton *closeBtn = [NSButton buttonWithTitle:@"✕" target:self action:@selector(closeFilter:)];
+    closeBtn.bordered = NO;
+    closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    for (NSView *v in @[findLbl, _filterField, _filterMatchCase, _filterWholeWord, closeBtn])
+        [_filterBar addSubview:v];
+
+    _filterBarHeight = [_filterBar.heightAnchor constraintEqualToConstant:0];   // hidden initially
+    [NSLayoutConstraint activateConstraints:@[
+        [_filterBar.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [_filterBar.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [_filterBar.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
+        _filterBarHeight,
+        [findLbl.leadingAnchor constraintEqualToAnchor:_filterBar.leadingAnchor constant:8],
+        [findLbl.centerYAnchor constraintEqualToAnchor:_filterBar.centerYAnchor],
+        [_filterField.leadingAnchor constraintEqualToAnchor:findLbl.trailingAnchor constant:6],
+        [_filterField.centerYAnchor constraintEqualToAnchor:_filterBar.centerYAnchor],
+        [_filterField.widthAnchor constraintGreaterThanOrEqualToConstant:160],
+        [_filterMatchCase.leadingAnchor constraintEqualToAnchor:_filterField.trailingAnchor constant:10],
+        [_filterMatchCase.centerYAnchor constraintEqualToAnchor:_filterBar.centerYAnchor],
+        [_filterWholeWord.leadingAnchor constraintEqualToAnchor:_filterMatchCase.trailingAnchor constant:8],
+        [_filterWholeWord.centerYAnchor constraintEqualToAnchor:_filterBar.centerYAnchor],
+        [closeBtn.trailingAnchor constraintEqualToAnchor:_filterBar.trailingAnchor constant:-8],
+        [closeBtn.centerYAnchor constraintEqualToAnchor:_filterBar.centerYAnchor],
+    ]];
+}
+
+- (void)toggleFilterBar {
+    BOOL show = (_filterBarHeight.constant == 0);
+    _filterBarHeight.constant = show ? 28 : 0;
+    if (show) { [self.window makeFirstResponder:_filterField]; }
+    else { _filterField.stringValue = @""; [self applyFilter]; }
+}
+- (void)closeFilter:(id)sender { _filterBarHeight.constant = 0; _filterField.stringValue = @""; [self applyFilter]; }
+- (void)refilter:(id)sender { [self applyFilter]; }
+- (void)controlTextDidChange:(NSNotification *)n { if (n.object == _filterField) [self applyFilter]; }
+
+- (void)applyFilter {
+    NSString *filter = _filterField.stringValue;
+    tiLine lineCount = [self sci:SCI_GETLINECOUNT wParam:0 lParam:0];
+    [self setReadOnly:NO];
+    if (filter.length == 0) {
+        if (lineCount > 0) [self sci:SCI_SHOWLINES wParam:0 lParam:(intptr_t)(lineCount - 1)];
+        [self setReadOnly:YES];
+        return;
+    }
+    BOOL mc = (_filterMatchCase.state == NSControlStateValueOn);
+    BOOL ww = (_filterWholeWord.state == NSControlStateValueOn);
+    NSStringCompareOptions opts = mc ? 0 : NSCaseInsensitiveSearch;
+    NSCharacterSet *wordChars = [NSCharacterSet alphanumericCharacterSet];
+    for (tiLine line = 0; line < lineCount; ++line) {
+        tiLine len = [self sci:SCI_LINELENGTH wParam:(uintptr_t)line lParam:0];
+        std::vector<char> buf((size_t)(len > 0 ? len : 0) + 1, 0);
+        [self sci:SCI_GETLINE wParam:(uintptr_t)line lParam:(intptr_t)buf.data()];
+        NSString *lt = [NSString stringWithUTF8String:buf.data()] ?: @"";
+        NSRange r = [lt rangeOfString:filter options:opts];
+        BOOL matched = (r.location != NSNotFound);
+        if (matched && ww) {
+            if (r.location > 0) {
+                unichar ch = [lt characterAtIndex:r.location - 1];
+                if ([wordChars characterIsMember:ch] || ch == '_') matched = NO;
+            }
+            NSUInteger end = r.location + r.length;
+            if (matched && end < lt.length) {
+                unichar ch = [lt characterAtIndex:end];
+                if ([wordChars characterIsMember:ch] || ch == '_') matched = NO;
+            }
+        }
+        [self sci:(matched ? SCI_SHOWLINES : SCI_HIDELINES) wParam:(uintptr_t)line lParam:(uintptr_t)line];
+    }
+    [self setReadOnly:YES];
+}
+
+// ── Context menu (port of the Windows result-window menu) ───────────────────
+- (NSMenu *)buildContextMenu {
+    NSMenu *m = [[NSMenu alloc] init];
+    m.delegate = self;
+    m.autoenablesItems = NO;
+    return m;
+}
+
+- (void)ctxAdd:(NSMenu *)menu title:(NSString *)t sel:(SEL)s checked:(BOOL)checked {
+    NSMenuItem *mi = [[NSMenuItem alloc] initWithTitle:t action:s keyEquivalent:@""];
+    mi.target = self;
+    mi.state = checked ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:mi];
+}
+
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+    [menu removeAllItems];
+    [self ctxAdd:menu title:@"Copy" sel:@selector(ctxCopy:) checked:NO];
+    [self ctxAdd:menu title:@"Select All" sel:@selector(ctxSelectAll:) checked:NO];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [self ctxAdd:menu title:@"Find…" sel:@selector(ctxFind:) checked:NO];
+    [self ctxAdd:menu title:@"Save to file…" sel:@selector(ctxSaveToFile:) checked:NO];
+    [self ctxAdd:menu title:@"Reset save file" sel:@selector(ctxResetSaveFile:) checked:NO];
+    [self ctxAdd:menu title:@"Save once as Richtext…" sel:@selector(ctxSaveRtf:) checked:NO];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [self ctxAdd:menu title:@"Word Wrap" sel:@selector(ctxWordWrap:) checked:_wrapMode];
+    [self ctxAdd:menu title:@"Show line numbers" sel:@selector(ctxShowLineNo:) checked:_lineNumbersInResult];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [self ctxAdd:menu title:@"Zoom In" sel:@selector(ctxZoomIn:) checked:NO];
+    [self ctxAdd:menu title:@"Zoom Out" sel:@selector(ctxZoomOut:) checked:NO];
+    [self ctxAdd:menu title:@"Reset Zoom" sel:@selector(ctxZoomReset:) checked:NO];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [self ctxAdd:menu title:@"Options…" sel:@selector(ctxOptions:) checked:NO];
+    [self appendMatchingPatterns:menu];
+}
+
+// Show the patterns that matched the caret's result line (informational).
+- (void)appendMatchingPatterns:(NSMenu *)menu {
+    tiLine pos = [self sci:SCI_GETCURRENTPOS wParam:0 lParam:0];
+    tiLine resLine = [self sci:SCI_LINEFROMPOSITION wParam:(uintptr_t)pos lParam:0];
+    if (resLine < 0 || resLine >= _findResults.size()) return;
+    const tlpLinePosInfo &li = _findResults.getLineAtRes(resLine);
+    if (li.second.posInfos().empty()) return;
+    [menu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *hdr = [[NSMenuItem alloc] initWithTitle:@"matching patterns:" action:nil keyEquivalent:@""];
+    hdr.enabled = NO;
+    [menu addItem:hdr];
+    for (tlmIdxPosInfo::const_iterator it = li.second.posInfos().begin(); it != li.second.posInfos().end(); ++it) {
+        tclPatternList::const_iterator pit = _patStyleList.find(it->first);
+        if (pit == _patStyleList.end()) continue;
+        const tclPattern &p = pit.getPattern();
+        NSString *t = @(p.getSearchText().c_str());
+        if (p.getOrderNumStr().size())
+            t = [NSString stringWithFormat:@"%s: %@", p.getOrderNumStr().c_str(), t];
+        NSMenuItem *mi = [[NSMenuItem alloc] initWithTitle:t action:nil keyEquivalent:@""];
+        mi.enabled = NO;
+        [menu addItem:mi];
+    }
+}
+
+- (void)ctxCopy:(id)sender { [self sci:SCI_COPY wParam:0 lParam:0]; }
+- (void)ctxSelectAll:(id)sender { [self sci:SCI_SELECTALL wParam:0 lParam:0]; }
+- (void)ctxFind:(id)sender { [self toggleFilterBar]; }
+- (void)ctxWordWrap:(id)sender { self.wrapMode = !_wrapMode; }
+- (void)ctxShowLineNo:(id)sender {
+    self.lineNumbersInResult = !_lineNumbersInResult;
+    [_controller doSearch];   // rebuild result text (the line-number prefix is baked in)
+}
+- (void)ctxZoomIn:(id)sender { [self sci:SCI_ZOOMIN wParam:0 lParam:0]; }
+- (void)ctxZoomOut:(id)sender { [self sci:SCI_ZOOMOUT wParam:0 lParam:0]; }
+- (void)ctxZoomReset:(id)sender { [self sci:SCI_SETZOOM wParam:0 lParam:0]; }
+- (void)ctxOptions:(id)sender { [_controller cmdShowOptions]; }
+
+- (void)ctxSaveToFile:(id)sender {
+    NSString *path = _saveFilePath;
+    if (!path) {
+        NSSavePanel *p = [NSSavePanel savePanel];
+        p.nameFieldStringValue = @"AnalyseResult.txt";
+        if ([p runModal] != NSModalResponseOK || !p.URL) return;
+        path = p.URL.path;
+        _saveFilePath = path;   // remember (until "Reset save file")
+    }
+    [self writePlainTextTo:path];
+}
+- (void)ctxResetSaveFile:(id)sender { _saveFilePath = nil; }
+
+- (void)writePlainTextTo:(NSString *)path {
+    tiLine len = [self sci:SCI_GETLENGTH wParam:0 lParam:0];
+    std::vector<char> buf((size_t)(len > 0 ? len : 0) + 1, 0);
+    [self sci:SCI_GETTEXT wParam:(uintptr_t)(buf.size()) lParam:(intptr_t)buf.data()];
+    NSString *s = [NSString stringWithUTF8String:buf.data()] ?: @"";
+    [s writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+// Export the styled result as RTF (colours come straight from the Scintilla
+// per-style fore/back we already programmed).
+- (void)ctxSaveRtf:(id)sender {
+    NSSavePanel *p = [NSSavePanel savePanel];
+    p.nameFieldStringValue = @"AnalyseResult.rtf";
+    if ([p runModal] != NSModalResponseOK || !p.URL) return;
+
+    tiLine total = [self sci:SCI_GETLENGTH wParam:0 lParam:0];
+    std::vector<char> buf((size_t)(total > 0 ? total : 0) + 1, 0);
+    [self sci:SCI_GETTEXT wParam:(uintptr_t)(buf.size()) lParam:(intptr_t)buf.data()];
+
+    NSMutableAttributedString *as = [[NSMutableAttributedString alloc] init];
+    NSFont *font = [NSFont userFixedPitchFontOfSize:(_resultFontSize ?: 11)];
+    // Walk per character; group runs by style for fewer attribute sets.
+    tiLine i = 0, runStart = 0;
+    int runStyle = (int)[self sci:SCI_GETSTYLEAT wParam:0 lParam:0];
+    auto flush = [&](tiLine endPos, int style) {
+        if (endPos <= runStart) return;
+        NSRange br = NSMakeRange((NSUInteger)runStart, (NSUInteger)(endPos - runStart));
+        // Map byte range → NSString range via the UTF-8 substring.
+        std::string sub(buf.data() + runStart, (size_t)(endPos - runStart));
+        NSString *piece = [NSString stringWithUTF8String:sub.c_str()] ?: @"";
+        int fore = (int)[self sci:SCI_STYLEGETFORE wParam:(uintptr_t)style lParam:0];
+        int back = (int)[self sci:SCI_STYLEGETBACK wParam:(uintptr_t)style lParam:0];
+        NSDictionary *attrs = @{
+            NSForegroundColorAttributeName: [NSColor colorWithCalibratedRed:(fore&0xFF)/255.0 green:((fore>>8)&0xFF)/255.0 blue:((fore>>16)&0xFF)/255.0 alpha:1],
+            NSBackgroundColorAttributeName: [NSColor colorWithCalibratedRed:(back&0xFF)/255.0 green:((back>>8)&0xFF)/255.0 blue:((back>>16)&0xFF)/255.0 alpha:1],
+            NSFontAttributeName: font,
+        };
+        [as appendAttributedString:[[NSAttributedString alloc] initWithString:piece attributes:attrs]];
+        (void)br;
+    };
+    for (i = 0; i < total; ++i) {
+        int st = (int)[self sci:SCI_GETSTYLEAT wParam:(uintptr_t)i lParam:0];
+        if (st != runStyle) { flush(i, runStyle); runStart = i; runStyle = st; }
+    }
+    flush(total, runStyle);
+
+    NSData *rtf = [as RTFFromRange:NSMakeRange(0, as.length) documentAttributes:@{}];
+    [rtf writeToURL:p.URL atomically:YES];
 }
 
 @end
