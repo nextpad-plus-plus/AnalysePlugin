@@ -134,12 +134,11 @@ showDialogCmdSlot:(int)slot {
 }
 
 - (intptr_t)bookmarkId {
-    if (!_bookmarkIdResolved) {
-        intptr_t bm = [self npp:NPPM_GETBOOKMARKID wParam:0 lParam:0];
-        _bookmarkId = (bm > 0) ? bm : 24;   // host returns 24; 24 is NPP's bookmark marker
-        _bookmarkIdResolved = YES;
-    }
-    return _bookmarkId;
+    // The macOS host draws bookmarks with marker 20 (kBookmarkMarker) and its
+    // symbol-margin mask only includes 20/19/18. NPPM_GETBOOKMARKID currently
+    // reports 24 (not rendered), so adding marker 24 would be invisible. Use 20
+    // to match what the host actually paints in the bookmark margin.
+    return 20;
 }
 
 - (NSString *)currentFilePath {

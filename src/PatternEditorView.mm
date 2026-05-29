@@ -204,11 +204,15 @@ static NSTextField *mkLabel(NSString *s) {
         {kColType,    @"Type",    70}, {kColCase,  @"Case",  40}, {kColWord,   @"Word",   44},
         {kColSelect,  @"Select",  50}, {kColHide,  @"Hide",  40}, {kColComment,@"Comment",160},
     };
+    NSFont *hf = [NSFont systemFontOfSize:10];
     for (auto &c : cols) {
         NSTableColumn *tc = [[NSTableColumn alloc] initWithIdentifier:c.ident];
         tc.title = c.title;
-        tc.width = c.w;
-        tc.headerCell.font = [NSFont systemFontOfSize:10];
+        tc.headerCell.font = hf;
+        // Default each column to its title's width (compact); user can widen.
+        CGFloat tw = ceil([c.title sizeWithAttributes:@{NSFontAttributeName: hf}].width) + 16;
+        tc.width = tw;
+        tc.minWidth = MAX(22, tw - 8);
         [_table addTableColumn:tc];
     }
     scroll.documentView = _table;
@@ -643,7 +647,7 @@ static NSTextField *mkLabel(NSString *s) {
         NSTextField *tf = [NSTextField labelWithString:@""];
         tf.font = [NSFont systemFontOfSize:10];
         tf.translatesAutoresizingMaskIntoConstraints = NO;
-        tf.drawsBackground = YES;
+        tf.drawsBackground = NO;   // row view paints the bg; selection shows through
         tf.cell.lineBreakMode = NSLineBreakByTruncatingTail;
         [cell addSubview:tf];
         cell.textField = tf;
@@ -654,10 +658,23 @@ static NSTextField *mkLabel(NSString *s) {
         ]];
     }
     cell.textField.stringValue = text ?: @"";
-    // Per-row coloring from the pattern's fg/bg (mirrors NM_CUSTOMDRAW).
+    // Foreground per pattern; the row view supplies the background colour.
     cell.textField.textColor = nsColorFromRef(p.getColorNum());
-    cell.textField.backgroundColor = nsColorFromRef(p.getBgColorNum());
     return cell;
+}
+
+// Each row's background = the pattern's BgCol; selection highlight draws on top.
+- (NSTableRowView *)tableView:(NSTableView *)tableView rowViewForRow:(NSInteger)row {
+    NSTableRowView *rv = [tableView makeViewWithIdentifier:@"row" owner:self];
+    if (!rv) {
+        rv = [[NSTableRowView alloc] initWithFrame:NSZeroRect];
+        rv.identifier = @"row";
+    }
+    if (row >= 0 && row < (NSInteger)_resultList.size()) {
+        tPatId pid = _resultList.getPatternId((unsigned)row);
+        rv.backgroundColor = nsColorFromRef(_resultList.getPattern(pid).getBgColorNum());
+    }
+    return rv;
 }
 
 - (void)tableViewSelectionDidChange:(NSNotification *)notification {

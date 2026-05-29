@@ -130,6 +130,26 @@
     return [_sci message:msg wParam:wParam lParam:lParam];
 }
 
+// Is the keyboard focus inside our embedded Scintilla?
+- (BOOL)resultHasFocus {
+    NSResponder *fr = self.window.firstResponder;
+    if (![fr isKindOfClass:NSView.class]) return NO;
+    for (NSView *v = (NSView *)fr; v; v = v.superview) if (v == _sci) return YES;
+    return NO;
+}
+
+// Cmd +/- / Cmd 0 zoom the result view (Scintilla also zooms on pinch/Ctrl-scroll).
+// Scoped to when the result has focus so it doesn't fight the host editor's zoom.
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    if ((event.modifierFlags & NSEventModifierFlagCommand) && [self resultHasFocus]) {
+        NSString *ch = event.charactersIgnoringModifiers;
+        if ([ch isEqualToString:@"="] || [ch isEqualToString:@"+"]) { [self sci:SCI_ZOOMIN wParam:0 lParam:0]; return YES; }
+        if ([ch isEqualToString:@"-"]) { [self sci:SCI_ZOOMOUT wParam:0 lParam:0]; return YES; }
+        if ([ch isEqualToString:@"0"]) { [self sci:SCI_SETZOOM wParam:0 lParam:0]; return YES; }
+    }
+    return [super performKeyEquivalent:event];
+}
+
 - (void)setReadOnly:(BOOL)ro { [self sci:SCI_SETREADONLY wParam:(ro ? 1 : 0) lParam:0]; }
 
 // ── line-number column sizing ──────────────────────────────────────────────
@@ -471,6 +491,8 @@
     _filterBar.translatesAutoresizingMaskIntoConstraints = NO;
     _filterBar.wantsLayer = YES;
     _filterBar.layer.backgroundColor = NSColor.controlBackgroundColor.CGColor;
+    _filterBar.layer.masksToBounds = YES;   // clip contents when collapsed
+    _filterBar.hidden = YES;                // fully hidden until Find… is chosen
     [self addSubview:_filterBar];
 
     NSTextField *findLbl = [NSTextField labelWithString:@"Find:"];
@@ -514,12 +536,18 @@
 }
 
 - (void)toggleFilterBar {
-    BOOL show = (_filterBarHeight.constant == 0);
+    BOOL show = _filterBar.hidden;
+    _filterBar.hidden = !show;
     _filterBarHeight.constant = show ? 28 : 0;
     if (show) { [self.window makeFirstResponder:_filterField]; }
     else { _filterField.stringValue = @""; [self applyFilter]; }
 }
-- (void)closeFilter:(id)sender { _filterBarHeight.constant = 0; _filterField.stringValue = @""; [self applyFilter]; }
+- (void)closeFilter:(id)sender {
+    _filterBar.hidden = YES;
+    _filterBarHeight.constant = 0;
+    _filterField.stringValue = @"";
+    [self applyFilter];
+}
 - (void)refilter:(id)sender { [self applyFilter]; }
 - (void)controlTextDidChange:(NSNotification *)n { if (n.object == _filterField) [self applyFilter]; }
 
