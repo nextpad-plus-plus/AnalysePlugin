@@ -1,0 +1,11 @@
+# Build output
+build/
+build-*/
+*.dylib
+*.o
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
