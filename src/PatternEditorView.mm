@@ -231,7 +231,7 @@ static NSTextField *mkLabel(NSString *s) {
         [typeLbl.centerYAnchor constraintEqualToAnchor:_searchType.centerYAnchor],
         [_searchType.topAnchor constraintEqualToAnchor:_searchText.bottomAnchor constant:6],
         [_searchType.leadingAnchor constraintEqualToAnchor:typeLbl.trailingAnchor constant:6],
-        [_searchType.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-M],
+        [_searchType.trailingAnchor constraintEqualToAnchor:self.centerXAnchor constant:30],
 
         // Case / Whole word
         [_caseChk.topAnchor constraintEqualToAnchor:_searchType.bottomAnchor constant:6],
@@ -244,14 +244,14 @@ static NSTextField *mkLabel(NSString *s) {
         [orderLbl.centerYAnchor constraintEqualToAnchor:_orderNum.centerYAnchor],
         [_orderNum.topAnchor constraintEqualToAnchor:_caseChk.bottomAnchor constant:6],
         [_orderNum.leadingAnchor constraintEqualToAnchor:orderLbl.trailingAnchor constant:6],
-        [_orderNum.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-M],
+        [_orderNum.trailingAnchor constraintEqualToAnchor:self.centerXAnchor constant:30],
 
         // Group
         [groupLbl.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:M],
         [groupLbl.centerYAnchor constraintEqualToAnchor:_group.centerYAnchor],
         [_group.topAnchor constraintEqualToAnchor:_orderNum.bottomAnchor constant:6],
         [_group.leadingAnchor constraintEqualToAnchor:groupLbl.trailingAnchor constant:6],
-        [_group.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-M],
+        [_group.trailingAnchor constraintEqualToAnchor:self.centerXAnchor constant:30],
 
         // Comment
         [commentLbl.topAnchor constraintEqualToAnchor:_group.bottomAnchor constant:6],
@@ -322,12 +322,22 @@ static NSTextField *mkLabel(NSString *s) {
         [search.leadingAnchor constraintEqualToAnchor:clear.trailingAnchor constant:4],
         [search.widthAnchor constraintEqualToConstant:60],
 
-        // table fills the rest
+        // table fills the rest — top pinned to the form (required), leading/trailing required.
         [scroll.topAnchor constraintEqualToAnchor:del.bottomAnchor constant:8],
         [scroll.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:0],
         [scroll.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:0],
-        [scroll.bottomAnchor constraintEqualToAnchor:self.bottomAnchor constant:0],
     ]];
+
+    // The form above is a rigid top-anchored chain (all required). To keep it from
+    // ever being squished when the panel is shortened, the table's bottom yields
+    // (low priority) and the table keeps a minimum height; if the panel is too
+    // short the table clips at the bottom instead of compressing the form.
+    NSLayoutConstraint *tblBottom = [scroll.bottomAnchor constraintEqualToAnchor:self.bottomAnchor];
+    tblBottom.priority = NSLayoutPriorityDefaultLow;        // 250
+    tblBottom.active = YES;
+    NSLayoutConstraint *tblMinH = [scroll.heightAnchor constraintGreaterThanOrEqualToConstant:60];
+    tblMinH.priority = 999;
+    tblMinH.active = YES;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

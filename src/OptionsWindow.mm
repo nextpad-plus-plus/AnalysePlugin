@@ -1,4 +1,8 @@
 // OptionsWindow.mm — see header. Port of the Windows ConfigDialog (Options).
+//
+// Layout matches Windows (Image #8): within each group, LABELS are left-aligned
+// and CONTROLS (checkboxes, combos, colour wells, buttons) are right-aligned to
+// the group's trailing edge.
 
 #import "OptionsWindow.h"
 #import "AnalyseController.h"
@@ -35,6 +39,35 @@ static int refFromNSColorO(NSColor *col) {
     return (int)RGB(r, g, b);
 }
 
+// ── control factories ────────────────────────────────────────────────────────
+static NSTextField *lbl(NSString *s) {
+    NSTextField *l = [NSTextField labelWithString:s];
+    l.translatesAutoresizingMaskIntoConstraints = NO;
+    return l;
+}
+static NSButton *chkBox(void) {  // title-less checkbox (label lives to its left)
+    NSButton *b = [NSButton checkboxWithTitle:@"" target:nil action:nil];
+    b.translatesAutoresizingMaskIntoConstraints = NO;
+    return b;
+}
+static NSPopUpButton *popup(NSArray<NSString *> *titles) {
+    NSPopUpButton *p = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [p addItemsWithTitles:titles];
+    p.translatesAutoresizingMaskIntoConstraints = NO;
+    return p;
+}
+static NSColorWell *well(void) {
+    NSColorWell *w = [[NSColorWell alloc] initWithFrame:NSZeroRect];
+    w.translatesAutoresizingMaskIntoConstraints = NO;
+    return w;
+}
+static NSBox *box(NSString *title) {
+    NSBox *b = [[NSBox alloc] initWithFrame:NSZeroRect];
+    b.title = title;
+    b.translatesAutoresizingMaskIntoConstraints = NO;
+    return b;
+}
+
 @implementation OptionsWindow {
     __weak AnalyseController *_controller;
     NSPopUpButton *_searchType, *_selection, *_onEnter, *_numCfg, *_fontName, *_fontSize;
@@ -44,7 +77,7 @@ static int refFromNSColorO(NSColor *col) {
 }
 
 - (instancetype)initWithController:(AnalyseController *)controller {
-    NSRect frame = NSMakeRect(0, 0, 560, 460);
+    NSRect frame = NSMakeRect(0, 0, 580, 470);
     NSPanel *panel = [[NSPanel alloc] initWithContentRect:frame
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskUtilityWindow)
           backing:NSBackingStoreBuffered defer:NO];
@@ -58,85 +91,35 @@ static int refFromNSColorO(NSColor *col) {
     return self;
 }
 
-static NSTextField *lbl(NSString *s) {
-    NSTextField *l = [NSTextField labelWithString:s];
-    l.translatesAutoresizingMaskIntoConstraints = NO;
-    return l;
-}
-static NSButton *chk(NSString *t) {
-    NSButton *b = [NSButton checkboxWithTitle:t target:nil action:nil];
-    b.translatesAutoresizingMaskIntoConstraints = NO;
-    return b;
-}
-static NSBox *box(NSString *title) {
-    NSBox *b = [[NSBox alloc] initWithFrame:NSZeroRect];
-    b.title = title;
-    b.translatesAutoresizingMaskIntoConstraints = NO;
-    return b;
-}
-
 - (void)buildUI {
     NSView *c = self.window.contentView;
 
-    // ── Default Values group ────────────────────────────────────────────────
-    NSBox *gDef = box(@"Default Values");
-    NSView *dv = gDef.contentView;
-    NSTextField *typeLbl = lbl(@"Search type");
-    _searchType = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [_searchType addItemsWithTitles:@[@"normal", @"escaped", @"regex", @"rgx_multiline"]];
-    _searchType.translatesAutoresizingMaskIntoConstraints = NO;
-    _matchCase = chk(@"Search case sensitive");
-    _wholeWord = chk(@"Search whole word");
-    _doSearch  = chk(@"Do Search");
-    _hideText  = chk(@"Hide text");
-    NSTextField *fgLbl = lbl(@"Color Foreground");
-    _fgWell = [[NSColorWell alloc] initWithFrame:NSZeroRect]; _fgWell.translatesAutoresizingMaskIntoConstraints = NO;
-    NSTextField *bgLbl = lbl(@"Color Background");
-    _bgWell = [[NSColorWell alloc] initWithFrame:NSZeroRect]; _bgWell.translatesAutoresizingMaskIntoConstraints = NO;
-    NSTextField *selLbl = lbl(@"Selection on");
-    _selection = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [_selection addItemsWithTitles:@[@"text", @"line"]];
-    _selection.translatesAutoresizingMaskIntoConstraints = NO;
-    for (NSView *v in @[typeLbl,_searchType,_matchCase,_wholeWord,_doSearch,_hideText,fgLbl,_fgWell,bgLbl,_bgWell,selLbl,_selection]) [dv addSubview:v];
+    NSBox *gDef  = box(@"Default Values");
+    NSBox *gBeh  = box(@"Behaviour");
+    NSBox *gFont = box(@"Result Window Font");
 
-    // ── Behaviour group ──────────────────────────────────────────────────────
-    NSBox *gBeh = box(@"Behaviour");
-    NSView *bv = gBeh.contentView;
-    _useBookmark = chk(@"Use bookmarks in text");
-    _autoUpdate  = chk(@"Auto update on modify");
-    _syncScroll  = chk(@"Synchronize view scrolling");
-    _dblClick    = chk(@"Dbl-Click jumps to EditView");
-    NSTextField *enterLbl = lbl(@"Action on Enter");
-    _onEnter = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [_onEnter addItemsWithTitles:@[@"just search", @"update line", @"add line"]];
-    _onEnter.translatesAutoresizingMaskIntoConstraints = NO;
-    NSTextField *cfgLbl = lbl(@"Recently used config files");
-    _numCfg = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [_numCfg addItemsWithTitles:@[@"0",@"1",@"2",@"3",@"4",@"5",@"6",@"7",@"8"]];
-    _numCfg.translatesAutoresizingMaskIntoConstraints = NO;
-    NSTextField *ctxLbl = lbl(@"Editor context menu");
+    // Default Values
+    _searchType = popup(@[@"normal", @"escaped", @"regex", @"rgx_multiline"]);
+    _matchCase = chkBox(); _wholeWord = chkBox(); _doSearch = chkBox(); _hideText = chkBox();
+    _fgWell = well(); _bgWell = well();
+    _selection = popup(@[@"text", @"line"]);
+
+    // Behaviour
+    _useBookmark = chkBox(); _autoUpdate = chkBox(); _syncScroll = chkBox(); _dblClick = chkBox();
+    _onEnter = popup(@[@"just search", @"update line", @"add line"]);
+    _numCfg = popup(@[@"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8"]);
     NSButton *ctxBtn = [NSButton buttonWithTitle:@"add command" target:self action:@selector(onAddContext:)];
     ctxBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    for (NSView *v in @[_useBookmark,_autoUpdate,_syncScroll,_dblClick,enterLbl,_onEnter,cfgLbl,_numCfg,ctxLbl,ctxBtn]) [bv addSubview:v];
 
-    // ── Result Window Font group ─────────────────────────────────────────────
-    NSBox *gFont = box(@"Result Window Font");
-    NSView *fv = gFont.contentView;
-    NSTextField *nameLbl = lbl(@"Name");
+    // Result Window Font
     _fontName = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [_fontName addItemWithTitle:@""];
     [_fontName addItemsWithTitles:[[NSFontManager sharedFontManager].availableFontFamilies
                                    sortedArrayUsingSelector:@selector(compare:)]];
     _fontName.translatesAutoresizingMaskIntoConstraints = NO;
-    NSTextField *sizeLbl = lbl(@"Size");
-    _fontSize = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [_fontSize addItemsWithTitles:@[@"6",@"7",@"8",@"9",@"10",@"11",@"12",@"14",@"16",@"18",@"20"]];
-    _fontSize.translatesAutoresizingMaskIntoConstraints = NO;
-    _showLineNo = chk(@"Show line numbers in result");
-    _wordWrap   = chk(@"Word wrap mode in result");
-    for (NSView *v in @[nameLbl,_fontName,sizeLbl,_fontSize,_showLineNo,_wordWrap]) [fv addSubview:v];
+    _fontSize = popup(@[@"6", @"7", @"8", @"9", @"10", @"11", @"12", @"14", @"16", @"18", @"20"]);
+    _showLineNo = chkBox(); _wordWrap = chkBox();
 
-    // ── OK / Cancel ──────────────────────────────────────────────────────────
     NSButton *ok = [NSButton buttonWithTitle:@"OK" target:self action:@selector(onOK:)];
     ok.keyEquivalent = @"\r"; ok.translatesAutoresizingMaskIntoConstraints = NO;
     NSButton *cancel = [NSButton buttonWithTitle:@"Cancel" target:self action:@selector(onCancel:)];
@@ -144,59 +127,80 @@ static NSBox *box(NSString *title) {
 
     for (NSView *v in @[gDef, gBeh, gFont, ok, cancel]) [c addSubview:v];
 
-    // Layout: two columns of groups on top, font group bottom-left, buttons bottom-right.
     [NSLayoutConstraint activateConstraints:@[
         [gDef.topAnchor constraintEqualToAnchor:c.topAnchor constant:12],
         [gDef.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:12],
-        [gDef.widthAnchor constraintEqualToConstant:255],
-        [gDef.heightAnchor constraintEqualToConstant:250],
+        [gDef.widthAnchor constraintEqualToConstant:265],
+        [gDef.heightAnchor constraintEqualToConstant:255],
 
         [gBeh.topAnchor constraintEqualToAnchor:gDef.topAnchor],
         [gBeh.leadingAnchor constraintEqualToAnchor:gDef.trailingAnchor constant:12],
         [gBeh.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-12],
-        [gBeh.heightAnchor constraintEqualToConstant:230],
+        [gBeh.heightAnchor constraintEqualToConstant:235],
 
         [gFont.topAnchor constraintEqualToAnchor:gDef.bottomAnchor constant:12],
         [gFont.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:12],
-        [gFont.widthAnchor constraintEqualToConstant:255],
-        [gFont.heightAnchor constraintEqualToConstant:130],
+        [gFont.widthAnchor constraintEqualToConstant:265],
+        [gFont.heightAnchor constraintEqualToConstant:135],
 
-        [cancel.bottomAnchor constraintEqualToAnchor:c.bottomAnchor constant:-12],
         [ok.bottomAnchor constraintEqualToAnchor:c.bottomAnchor constant:-12],
         [ok.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-12],
+        [ok.widthAnchor constraintEqualToConstant:84],
+        [cancel.bottomAnchor constraintEqualToAnchor:c.bottomAnchor constant:-12],
         [cancel.trailingAnchor constraintEqualToAnchor:ok.leadingAnchor constant:-10],
-        [ok.widthAnchor constraintEqualToConstant:80],
-        [cancel.widthAnchor constraintEqualToConstant:80],
+        [cancel.widthAnchor constraintEqualToConstant:84],
     ]];
-    [self layoutGroup:dv rows:@[ @[typeLbl,_searchType], @[_matchCase], @[_wholeWord], @[_doSearch],
-        @[_hideText], @[fgLbl,_fgWell], @[bgLbl,_bgWell], @[selLbl,_selection] ]];
-    [self layoutGroup:bv rows:@[ @[_useBookmark], @[_autoUpdate], @[_syncScroll], @[_dblClick],
-        @[enterLbl,_onEnter], @[cfgLbl,_numCfg], @[ctxLbl,ctxBtn] ]];
-    [self layoutGroup:fv rows:@[ @[nameLbl,_fontName], @[sizeLbl,_fontSize], @[_showLineNo], @[_wordWrap] ]];
+
+    [self layoutGroup:gDef.contentView rows:@[
+        @[lbl(@"Search type"),           _searchType],
+        @[lbl(@"Search case sensitive"), _matchCase],
+        @[lbl(@"Search whole word"),     _wholeWord],
+        @[lbl(@"Do Search"),             _doSearch],
+        @[lbl(@"Hide text"),             _hideText],
+        @[lbl(@"Color Foreground"),      _fgWell],
+        @[lbl(@"Color Background"),      _bgWell],
+        @[lbl(@"Selection on"),          _selection],
+    ]];
+    [self layoutGroup:gBeh.contentView rows:@[
+        @[lbl(@"Use bookmarks in text"),       _useBookmark],
+        @[lbl(@"Auto update on modify"),       _autoUpdate],
+        @[lbl(@"Synchronize view scrolling"),  _syncScroll],
+        @[lbl(@"Dbl-Click jumps to EditView"), _dblClick],
+        @[lbl(@"Action on Enter"),             _onEnter],
+        @[lbl(@"Recently used config files"),  _numCfg],
+        @[lbl(@"Editor context menu"),         ctxBtn],
+    ]];
+    [self layoutGroup:gFont.contentView rows:@[
+        @[lbl(@"Name"),                        _fontName],
+        @[lbl(@"Size"),                        _fontSize],
+        @[lbl(@"Show line numbers in result"), _showLineNo],
+        @[lbl(@"Word wrap mode in result"),    _wordWrap],
+    ]];
 }
 
-// Simple vertical row layout inside a group's content view.
+// Each row: label left-aligned, control right-aligned to the group trailing edge.
 - (void)layoutGroup:(NSView *)g rows:(NSArray<NSArray<NSView *> *> *)rows {
     NSView *prev = nil;
     for (NSArray<NSView *> *row in rows) {
-        NSView *first = row.firstObject;
-        [g addConstraint:[NSLayoutConstraint constraintWithItem:first attribute:NSLayoutAttributeLeading
-            relatedBy:NSLayoutRelationEqual toItem:g attribute:NSLayoutAttributeLeading multiplier:1 constant:10]];
-        if (prev) {
-            [g addConstraint:[NSLayoutConstraint constraintWithItem:first attribute:NSLayoutAttributeTop
-                relatedBy:NSLayoutRelationEqual toItem:prev attribute:NSLayoutAttributeBottom multiplier:1 constant:8]];
-        } else {
-            [g addConstraint:[NSLayoutConstraint constraintWithItem:first attribute:NSLayoutAttributeTop
-                relatedBy:NSLayoutRelationEqual toItem:g attribute:NSLayoutAttributeTop multiplier:1 constant:6]];
+        NSTextField *label = (NSTextField *)row[0];
+        NSView *control = row[1];
+        [g addSubview:label];
+        [g addSubview:control];
+
+        [label.leadingAnchor constraintEqualToAnchor:g.leadingAnchor constant:12].active = YES;
+        [control.trailingAnchor constraintEqualToAnchor:g.trailingAnchor constant:-12].active = YES;
+        [label.centerYAnchor constraintEqualToAnchor:control.centerYAnchor].active = YES;
+        // keep the label from overlapping the control
+        [control.leadingAnchor constraintGreaterThanOrEqualToAnchor:label.trailingAnchor constant:8].active = YES;
+
+        if (prev) [control.topAnchor constraintEqualToAnchor:prev.bottomAnchor constant:8].active = YES;
+        else      [control.topAnchor constraintEqualToAnchor:g.topAnchor constant:8].active = YES;
+
+        if ([control isKindOfClass:NSColorWell.class]) {
+            [control.widthAnchor constraintEqualToConstant:44].active = YES;
+            [control.heightAnchor constraintEqualToConstant:20].active = YES;
         }
-        if (row.count > 1) {
-            NSView *second = row[1];
-            [g addConstraint:[NSLayoutConstraint constraintWithItem:second attribute:NSLayoutAttributeLeading
-                relatedBy:NSLayoutRelationEqual toItem:first attribute:NSLayoutAttributeTrailing multiplier:1 constant:8]];
-            [g addConstraint:[NSLayoutConstraint constraintWithItem:second attribute:NSLayoutAttributeCenterY
-                relatedBy:NSLayoutRelationEqual toItem:first attribute:NSLayoutAttributeCenterY multiplier:1 constant:0]];
-        }
-        prev = first;
+        prev = control;
     }
 }
 
