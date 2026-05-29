@@ -271,8 +271,14 @@ showDialogCmdSlot:(int)slot {
     switch (n->nmhdr.code) {
         case NPPN_READY:
             _ready = YES;
+            // Register both panels (they come back HIDDEN). We deliberately do
+            // NOT auto-show here: showing at READY doesn't reliably "take"
+            // before the side-panel host / session restore has settled, which
+            // would leave the menu checkmark ON while the panels stay hidden.
+            // Start hidden + unchecked so the first click shows them in sync.
             [self ensurePanels];
-            [self setPanelsVisible:YES];
+            _panelsVisible = NO;
+            [self syncMenuCheck];
             break;
         case NPPN_SHUTDOWN:
             if (_editorHandle) [self npp:NPPM_DMM_UNREGISTERPANEL wParam:(uintptr_t)_editorHandle lParam:0];
