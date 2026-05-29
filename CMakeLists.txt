@@ -32,6 +32,7 @@ add_library(AnalysePlugin SHARED
     src/tclFindResultDoc.cpp
     # XML config (kept wire-compatible with AnalyseDoc.xsd via NSXMLDocument)
     src/FindConfigDoc.mm
+    src/OptionsWindow.mm
     # ── Pending phases (uncomment as each lands) ──
     # src/OptionsWindow.mm
     # src/HelpWindow.mm

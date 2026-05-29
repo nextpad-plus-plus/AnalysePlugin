@@ -3,6 +3,7 @@
 #import "AnalyseController.h"
 #import "ResultPanelView.h"
 #import "PatternEditorView.h"
+#import "OptionsWindow.h"
 #include "Scintilla.h"
 #include "BoostRegexSearch.h"   // SCFIND_REGEXP_DOTMATCHESNL / EMPTYMATCH_ALL / SKIPCRLFASONE
 #include "tclPattern.h"
@@ -34,6 +35,20 @@ extern NppData nppData;
     intptr_t  _bookmarkId;
     BOOL      _bookmarkIdResolved;
     NSString *_lastSearchFile;
+    OptionsWindow *_optionsWindow;
+}
+
+// Default settings (mirror the Windows ConfigDialog ctor + Image #2).
++ (void)registerDefaults {
+    [NSUserDefaults.standardUserDefaults registerDefaults:@{
+        kAPDefSearchType: @0, kAPDefMatchCase: @NO, kAPDefWholeWord: @NO,
+        kAPDefDoSearch: @YES, kAPDefHideText: @NO,
+        kAPDefFgColor: @(0), kAPDefBgColor: @(0xFFFFFF), kAPDefSelection: @1 /*line*/,
+        kAPUseBookmark: @YES, kAPAutoUpdate: @NO, kAPSyncScroll: @YES, kAPDblClickJumps: @YES,
+        kAPOnEnterAction: @0, kAPNumCfgFiles: @4,
+        kAPResultFontName: @"", kAPResultFontSize: @8,
+        kAPShowLineNumbers: @YES, kAPWordWrap: @NO,
+    }];
 }
 
 + (instancetype)shared {
@@ -49,9 +64,38 @@ extern NppData nppData;
       funcItems:(FuncItem *)items
           count:(int)count
 showDialogCmdSlot:(int)slot {
+    [AnalyseController registerDefaults];
     _items = items;
     _itemCount = count;
     _showDialogSlot = slot;
+}
+
+// Push NSUserDefaults-backed settings into the panels + default pattern, then
+// re-render (a full doSearch rebuilds result text/styles with the new options).
+- (void)applySettings {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    if (_resultPanel) {
+        _resultPanel.useBookmark = [d boolForKey:kAPUseBookmark];
+        _resultPanel.syncScroll = [d boolForKey:kAPSyncScroll];
+        _resultPanel.dblClickJumpsToEditView = [d boolForKey:kAPDblClickJumps];
+        _resultPanel.lineNumbersInResult = [d boolForKey:kAPShowLineNumbers];
+        _resultPanel.wrapMode = [d boolForKey:kAPWordWrap];
+        _resultPanel.resultFontName = [d stringForKey:kAPResultFontName] ?: @"";
+        _resultPanel.resultFontSize = (unsigned)[d integerForKey:kAPResultFontSize];
+    }
+    if (_editorPanel) {
+        tclPattern dp;
+        dp.setSearchType((int)[d integerForKey:kAPDefSearchType]);
+        dp.setMatchCase([d boolForKey:kAPDefMatchCase]);
+        dp.setWholeWord([d boolForKey:kAPDefWholeWord]);
+        dp.setDoSearch([d boolForKey:kAPDefDoSearch]);
+        dp.setHideText([d boolForKey:kAPDefHideText]);
+        dp.setColor((tColor)[d integerForKey:kAPDefFgColor]);
+        dp.setBgColor((tColor)[d integerForKey:kAPDefBgColor]);
+        dp.setSelectionType((int)[d integerForKey:kAPDefSelection]);
+        [_editorPanel setDefaultPattern:dp];
+    }
+    if (_ready) [self doSearch];   // re-render with the new display settings
 }
 
 // ── Host messaging helpers ─────────────────────────────────────────────────
@@ -284,6 +328,7 @@ showDialogCmdSlot:(int)slot {
             // Start hidden + unchecked so the first click shows them in sync.
             [self ensurePanels];
             [_editorPanel loadFromPath:[self autoConfigPath]];   // restore last pattern list
+            [self applySettings];                                // apply saved options to panels
             _panelsVisible = NO;
             [self syncMenuCheck];
             break;
@@ -324,8 +369,8 @@ showDialogCmdSlot:(int)slot {
 }
 
 - (void)cmdShowOptions {
-    // OptionsWindow lands in a later phase.
-    NSLog(@"[AnalysePlugin] Options… (pending)");
+    _optionsWindow = [[OptionsWindow alloc] initWithController:self];  // strong ref keeps it alive
+    [_optionsWindow showModal];
 }
 
 - (void)cmdShowHelp {

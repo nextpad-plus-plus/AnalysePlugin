@@ -29,6 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Default pattern used for new rows / as the result default style.
 - (const tclPattern &)defaultPattern;
+- (void)setDefaultPattern:(const tclPattern &)p;
 
 @end
 

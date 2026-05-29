@@ -49,6 +49,8 @@ showDialogCmdSlot:(int)slot;
 
 // Run the multi-pattern search over the active document (port of doSearch).
 - (void)doSearch;
+// Re-apply NSUserDefaults-backed settings to the panels (called by Options OK).
+- (void)applySettings;
 
 @property(nonatomic, readonly) NppData nppData;
 

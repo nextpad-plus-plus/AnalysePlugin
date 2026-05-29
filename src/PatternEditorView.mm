@@ -79,6 +79,7 @@ static NSString *const kColComment = @"Comment";
 
 - (tclResultList &)resultListRef { return _resultList; }
 - (const tclPattern &)defaultPattern { return _defaultPattern; }
+- (void)setDefaultPattern:(const tclPattern &)p { _defaultPattern = p; [self controlsFromPattern:p]; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 #pragma mark - UI construction
