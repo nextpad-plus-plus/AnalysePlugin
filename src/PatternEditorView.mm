@@ -9,6 +9,7 @@
 #import "AnalyseController.h"
 #include "Scintilla.h"
 #include "tclColor.h"
+#include "FindConfigDoc.h"
 #include <vector>
 
 // ── COLORREF (0x00BBGGRR) ↔ NSColor ─────────────────────────────────────────
@@ -432,9 +433,127 @@ static NSTextField *mkLabel(NSString *s) {
 }
 
 - (void)onSearch:(id)sender { [self runSearch]; }
-- (void)onOrder:(id)sender  { /* sort submenu — next pass */ }
-- (void)onLoad:(id)sender   { /* config load — next pass */ }
-- (void)onSave:(id)sender   { /* config save — next pass */ }
+
+- (void)onOrder:(id)sender {
+    NSButton *b = sender;
+    NSMenu *menu = [[NSMenu alloc] init];
+    [menu addItemWithTitle:@"Sort by Order#"  action:@selector(sortByOrder:)   keyEquivalent:@""];
+    [menu addItemWithTitle:@"Sort by Group"   action:@selector(sortByGroup:)   keyEquivalent:@""];
+    [menu addItemWithTitle:@"Sort by Search"  action:@selector(sortBySearch:)  keyEquivalent:@""];
+    [menu addItemWithTitle:@"Sort by Comment" action:@selector(sortByComment:) keyEquivalent:@""];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItemWithTitle:@"Apply order# to list" action:@selector(applyOrderNums:) keyEquivalent:@""];
+    for (NSMenuItem *mi in menu.itemArray) mi.target = self;
+    [NSMenu popUpContextMenu:menu withEvent:(NSApp.currentEvent ?: [NSEvent otherEventWithType:NSEventTypeApplicationDefined
+        location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0])
+                     forView:b];
+}
+
+- (void)onLoad:(id)sender {
+    NSButton *b = sender;
+    NSMenu *menu = [[NSMenu alloc] init];
+    [menu addItemWithTitle:@"Load (replace)…" action:@selector(loadReplace:) keyEquivalent:@""];
+    [menu addItemWithTitle:@"Append…"         action:@selector(loadAppend:)  keyEquivalent:@""];
+    [menu addItemWithTitle:@"Prepend…"        action:@selector(loadPrepend:) keyEquivalent:@""];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItemWithTitle:@"Reset list"      action:@selector(onClear:)     keyEquivalent:@""];
+    for (NSMenuItem *mi in menu.itemArray) mi.target = self;
+    [NSMenu popUpContextMenu:menu withEvent:(NSApp.currentEvent ?: [NSEvent otherEventWithType:NSEventTypeApplicationDefined
+        location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0])
+                     forView:b];
+}
+
+- (void)onSave:(id)sender { [self saveConfigWithHits:NO]; }
+
+// ── Order submenu actions ───────────────────────────────────────────────────
+- (void)applyOrderNums:(id)sender {
+    // Zero-padded sequential order numbers (mirrors doApplyOrderNums).
+    unsigned n = _resultList.size();
+    int width = (n < 10) ? 1 : (n < 100) ? 2 : (n < 1000) ? 3 : 4;
+    unsigned i = 1;
+    for (tclResultList::iterator it = _resultList.begin(); it != _resultList.end(); ++it, ++i) {
+        char buf[16];
+        snprintf(buf, sizeof buf, "%0*u", width, i);
+        tclPattern p = _resultList.getPattern(it.getPatId());
+        p.setOrderNumStr(buf);
+        _resultList.setPattern(it.getPatId(), p);
+    }
+    [self reloadTable];
+}
+- (void)sortByOrder:(id)sender   { _resultList.sortByOrderNum(true); [self reloadTable]; }
+- (void)sortByGroup:(id)sender   { [self sortByField:^(const tclPattern &p){ return p.getGroup(); }]; }
+- (void)sortBySearch:(id)sender  { [self sortByField:^(const tclPattern &p){ return p.getSearchText(); }]; }
+- (void)sortByComment:(id)sender { [self sortByField:^(const tclPattern &p){ return p.getComment(); }]; }
+
+// Stable sort of the pattern list by a string key, preserving each pattern's result.
+- (void)sortByField:(generic_string (^)(const tclPattern &))keyFn {
+    std::vector<std::pair<generic_string, std::pair<tclPattern, tclResult>>> rows;
+    for (tclResultList::iterator it = _resultList.begin(); it != _resultList.end(); ++it) {
+        const tclPattern &p = _resultList.getPattern(it.getPatId());
+        rows.push_back({keyFn(p), {p, it.refResult()}});
+    }
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const auto &a, const auto &b){ return a.first < b.first; });
+    _resultList.clear();
+    for (auto &r : rows) {
+        tPatId id = _resultList.push_back(r.second.first);
+        _resultList.refResult(id) = r.second.second;
+    }
+    [self reloadTable];
+}
+
+// ── Load/Save config files ──────────────────────────────────────────────────
+- (void)loadReplace:(id)sender { [self loadConfigAppend:YES loadNew:YES]; }
+- (void)loadAppend:(id)sender  { [self loadConfigAppend:YES loadNew:NO]; }
+- (void)loadPrepend:(id)sender { [self loadConfigAppend:NO  loadNew:NO]; }
+
+- (void)loadConfigAppend:(BOOL)append loadNew:(BOOL)loadNew {
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.allowedFileTypes = @[@"xml"];
+    panel.allowsMultipleSelection = NO;
+    if ([panel runModal] != NSModalResponseOK || !panel.URL) return;
+    std::string err;
+    bool ok = APConfigDoc::readPatternList(panel.URL.path.UTF8String, _resultList,
+                                           append, loadNew, err);
+    if (!ok) {
+        NSAlert *a = [[NSAlert alloc] init];
+        a.messageText = @"Could not load config";
+        a.informativeText = @(err.c_str());
+        [a runModal];
+        return;
+    }
+    [self reloadTable];
+    [self runSearch];
+}
+
+- (void)saveConfigWithHits:(BOOL)withHits {
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    panel.allowedFileTypes = @[@"xml"];
+    panel.nameFieldStringValue = @"AnalysePlugin.xml";
+    if ([panel runModal] != NSModalResponseOK || !panel.URL) return;
+    std::string err;
+    bool ok = withHits
+        ? APConfigDoc::writePatternHitsList(panel.URL.path.UTF8String, _resultList, err)
+        : APConfigDoc::writePatternList(panel.URL.path.UTF8String, _resultList, err);
+    if (!ok) {
+        NSAlert *a = [[NSAlert alloc] init];
+        a.messageText = @"Could not save config";
+        a.informativeText = @(err.c_str());
+        [a runModal];
+    }
+}
+
+// ── Auto persist/restore (controller calls these on shutdown/ready) ─────────
+- (void)saveToPath:(NSString *)path {
+    std::string err;
+    APConfigDoc::writePatternList(path.UTF8String, _resultList, err);
+}
+- (void)loadFromPath:(NSString *)path {
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return;
+    std::string err;
+    if (APConfigDoc::readPatternList(path.UTF8String, _resultList, true, true, err))
+        [self reloadTable];
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 #pragma mark - public commands

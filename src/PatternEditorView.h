@@ -23,6 +23,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)addSelectionAsPatterns;
 - (void)runSearch;
 
+// Auto persist/restore the pattern list (controller calls these on shutdown/ready).
+- (void)saveToPath:(NSString *)path;
+- (void)loadFromPath:(NSString *)path;
+
 // Default pattern used for new rows / as the result default style.
 - (const tclPattern &)defaultPattern;
 

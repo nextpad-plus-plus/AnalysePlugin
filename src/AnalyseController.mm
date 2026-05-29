@@ -15,6 +15,8 @@ extern NppData nppData;
 @interface AnalyseController ()
 // Search one pattern over the active document; fills result. Returns hit count.
 - (int)findPattern:(const tclPattern &)pattern into:(tclResult &)result;
+// Auto-persisted pattern list file (~/.nextpad++/plugins/Config/AnalysePlugin/AnalysePlugin.xml).
+- (NSString *)autoConfigPath;
 @end
 
 @implementation AnalyseController {
@@ -81,6 +83,10 @@ showDialogCmdSlot:(int)slot {
                                                attributes:nil
                                                     error:nil];
     return dir;
+}
+
+- (NSString *)autoConfigPath {
+    return [[self configDir] stringByAppendingPathComponent:@"AnalysePlugin.xml"];
 }
 
 - (intptr_t)bookmarkId {
@@ -277,10 +283,12 @@ showDialogCmdSlot:(int)slot {
             // would leave the menu checkmark ON while the panels stay hidden.
             // Start hidden + unchecked so the first click shows them in sync.
             [self ensurePanels];
+            [_editorPanel loadFromPath:[self autoConfigPath]];   // restore last pattern list
             _panelsVisible = NO;
             [self syncMenuCheck];
             break;
         case NPPN_SHUTDOWN:
+            [_editorPanel saveToPath:[self autoConfigPath]];     // persist pattern list
             if (_editorHandle) [self npp:NPPM_DMM_UNREGISTERPANEL wParam:(uintptr_t)_editorHandle lParam:0];
             if (_resultHandle) [self npp:NPPM_DMM_UNREGISTERPANEL wParam:(uintptr_t)_resultHandle lParam:0];
             break;
