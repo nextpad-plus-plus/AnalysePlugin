@@ -32,7 +32,7 @@ static NSString *readDoc(NSString *name) {
 }
 
 - (instancetype)init {
-    NSRect frame = NSMakeRect(0, 0, 600, 520);
+    NSRect frame = NSMakeRect(0, 0, 600, 600);
     NSWindow *win = [[NSPanel alloc] initWithContentRect:frame
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                    NSWindowStyleMaskResizable | NSWindowStyleMaskUtilityWindow)
@@ -51,6 +51,13 @@ static NSString *readDoc(NSString *name) {
 
 - (void)buildUI {
     NSView *c = self.window.contentView;
+
+    // ── Logo (the host app icon, like the other plugins' About) ─────────────
+    NSImageView *logo = [[NSImageView alloc] initWithFrame:NSZeroRect];
+    logo.image = [NSApp applicationIconImage];
+    logo.imageScaling = NSImageScaleProportionallyUpOrDown;
+    logo.translatesAutoresizingMaskIntoConstraints = NO;
+    [c addSubview:logo];
 
     // ── Centered About header (matches the other released plugins) ───────────
     NSTextField *title = [NSTextField labelWithString:@"Analyse Plugin for macOS"];
@@ -112,7 +119,12 @@ static NSString *readDoc(NSString *name) {
         [c addSubview:v];
 
     [NSLayoutConstraint activateConstraints:@[
-        [title.topAnchor constraintEqualToAnchor:c.topAnchor constant:16],
+        [logo.topAnchor constraintEqualToAnchor:c.topAnchor constant:16],
+        [logo.centerXAnchor constraintEqualToAnchor:c.centerXAnchor],
+        [logo.widthAnchor constraintEqualToConstant:84],
+        [logo.heightAnchor constraintEqualToConstant:84],
+
+        [title.topAnchor constraintEqualToAnchor:logo.bottomAnchor constant:12],
         [title.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:20],
         [title.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-20],
 
