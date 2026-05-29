@@ -179,6 +179,7 @@ static NSTextField *mkLabel(NSString *s) {
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     scroll.hasVerticalScroller = YES;
     scroll.hasHorizontalScroller = YES;
+    scroll.autohidesScrollers = YES;   // overlay scrollers — don't reserve space
     scroll.borderType = NSBezelBorder;
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
 

@@ -87,6 +87,7 @@
     _sci.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [self addSubview:_sci];
     _sci.delegate = self;
+    _sci.scrollView.autohidesScrollers = YES;   // overlay scrollers — don't reserve space
 
     // Container styling — we colour the buffer ourselves on SCN_STYLENEEDED.
     [self sci:SCI_SETILEXER wParam:0 lParam:(intptr_t)0];   // null lexer
