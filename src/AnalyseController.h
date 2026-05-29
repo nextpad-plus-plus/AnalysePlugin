@@ -40,8 +40,15 @@ showDialogCmdSlot:(int)slot;
 - (intptr_t)sci:(uint32_t)msg wParam:(uintptr_t)wParam lParam:(intptr_t)lParam;
 // The handle of the currently-active editor view.
 - (NppHandle)activeScintilla;
+// The host's bookmark marker id (NPPM_GETBOOKMARKID), cached.
+- (intptr_t)bookmarkId;
+// Full path of the active document (empty for untitled).
+- (NSString *)currentFilePath;
 // The plugin's config directory (~/.nextpad++/plugins/Config/AnalysePlugin/).
 - (NSString *)configDir;
+
+// Run the multi-pattern search over the active document (port of doSearch).
+- (void)doSearch;
 
 @property(nonatomic, readonly) NppData nppData;
 

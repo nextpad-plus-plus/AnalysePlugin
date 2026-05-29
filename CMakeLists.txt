@@ -48,11 +48,10 @@ target_link_libraries(AnalysePlugin PRIVATE
     "-framework AppKit"
 )
 
-# ScintillaView is supplied by the host executable at runtime; resolve any
-# symbols we can't see at link time lazily against the loading process.
-target_link_options(AnalysePlugin PRIVATE
-    "-undefined" "dynamic_lookup"
-)
+# NOTE: we deliberately do NOT use `-undefined dynamic_lookup`. ScintillaView is
+# reached purely via NSClassFromString + objc_msgSend (no link-time symbol), so
+# the plugin has no genuine host-only symbols. Linking normally means a missing
+# definition fails the BUILD instead of silently dropping the plugin at dlopen.
 
 target_compile_options(AnalysePlugin PRIVATE
     -Wall -Wno-unused-parameter

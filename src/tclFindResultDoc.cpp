@@ -23,8 +23,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <algorithm>
 #include "tclResult.h"
 #include <assert.h>
-#define MDBG_COMP "FRDoc:" 
+#define MDBG_COMP "FRDoc:"
 #include "myDebug.h"
+
+// Static "invalid value" sentinel. On Windows this was defined in
+// tclFindResultDlg.cpp; that file is replaced by ResultPanelView.mm on macOS,
+// so the definition lives here (next to the class it belongs to).
+tlpLinePosInfo tclFindResultDoc::mDefLineInfo = tlpLinePosInfo();
 
 /**
 * insert the line into the result window if not already in.

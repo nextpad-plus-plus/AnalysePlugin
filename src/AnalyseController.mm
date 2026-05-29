@@ -4,8 +4,18 @@
 #import "ResultPanelView.h"
 #import "PatternEditorView.h"
 #include "Scintilla.h"
+#include "BoostRegexSearch.h"   // SCFIND_REGEXP_DOTMATCHESNL / EMPTYMATCH_ALL / SKIPCRLFASONE
+#include "tclPattern.h"
+#include "tclResult.h"
+#include "tclResultList.h"
+#include <vector>
 
 extern NppData nppData;
+
+@interface AnalyseController ()
+// Search one pattern over the active document; fills result. Returns hit count.
+- (int)findPattern:(const tclPattern &)pattern into:(tclResult &)result;
+@end
 
 @implementation AnalyseController {
     FuncItem *_items;          // owned by PluginEntry (static storage)
@@ -18,6 +28,10 @@ extern NppData nppData;
     uint64_t           _resultHandle;
     BOOL               _panelsVisible;
     BOOL               _ready;
+
+    intptr_t  _bookmarkId;
+    BOOL      _bookmarkIdResolved;
+    NSString *_lastSearchFile;
 }
 
 + (instancetype)shared {
@@ -69,6 +83,157 @@ showDialogCmdSlot:(int)slot {
     return dir;
 }
 
+- (intptr_t)bookmarkId {
+    if (!_bookmarkIdResolved) {
+        intptr_t bm = [self npp:NPPM_GETBOOKMARKID wParam:0 lParam:0];
+        _bookmarkId = (bm > 0) ? bm : 24;   // host returns 24; 24 is NPP's bookmark marker
+        _bookmarkIdResolved = YES;
+    }
+    return _bookmarkId;
+}
+
+- (NSString *)currentFilePath {
+    char buf[4096] = {0};
+    [self npp:NPPM_GETFULLCURRENTPATH wParam:sizeof(buf) lParam:(intptr_t)buf];
+    return buf[0] ? @(buf) : @"";
+}
+
+// ── Search engine (port of AnalysePlugin::doSearch) ────────────────────────
+- (void)doSearch {
+    if (!_editorPanel || !_resultPanel) return;
+    tclResultList &rl = [_editorPanel resultListRef];
+
+    // Program style slots from the current patterns + default pattern.
+    [_resultPanel setPatternStyles:rl defaultPattern:[_editorPanel defaultPattern]];
+
+    NSString *path = [self currentFilePath];
+    [_resultPanel setSearchFileName:path];
+
+    // Line-number column width from the active document's line count.
+    tiLine numLines = [self sci:SCI_GETLINECOUNT wParam:0 lParam:0];
+    int colSize = (numLines < 10) ? 1 : (numLines < 100) ? 2 : (numLines < 1000) ? 3
+                : (numLines < 10000) ? 4 : (numLines < 100000) ? 5 : (numLines < 1000000) ? 6
+                : (numLines < 10000000) ? 7 : (numLines < 100000000) ? 8
+                : (numLines < 1000000000) ? 9 : 10;
+
+    BOOL bReSearch = NO;
+    if (![path isEqualToString:(_lastSearchFile ?: @"")]) { _lastSearchFile = [path copy]; bReSearch = YES; }
+    if ([_resultPanel lineNumColSize] != colSize) { [_resultPanel setLineNumColSize:colSize]; bReSearch = YES; }
+    if (rl.getIsDirty() == false) bReSearch = YES;   // all clean → full re-search
+
+    if (bReSearch) {
+        [_resultPanel clearResults:NO];
+        for (tclResultList::iterator it = rl.begin(); it != rl.end(); ++it)
+            it.refResult().setDirty(true);
+    }
+
+    unsigned commentWidth = rl.getCommentWidth();
+    tiLine lcount = [self sci:SCI_GETLINECOUNT wParam:0 lParam:0];
+
+    for (tclResultList::iterator iResult = rl.begin(); iResult != rl.end(); ++iResult) {
+        tclResult &result = iResult.refResult();
+        if (result.getIsDirty() == false) continue;
+
+        tclResult oldResult = result;
+        result.clear();
+        const tclPattern &pattern = rl.getPattern(iResult.getPatId());
+        unsigned u = (unsigned)[self findPattern:pattern into:result];
+
+        if (u) {
+            [_resultPanel reserveLines:u];
+            [_resultPanel removeUnusedResultLines:iResult.getPatId() old:oldResult new:result];
+            std::string comment = pattern.getComment();   // already UTF-8
+
+            const tclResult::tlvPosInfo &positions = result.getPositions();
+            for (tclResult::tlvPosInfo::const_iterator it = positions.begin(); it != positions.end(); ++it) {
+                if (it->line >= lcount) continue;     // out of range guard
+                [_resultPanel insertPosInfo:iResult.getPatId() line:it->line pos:*it];
+                if (![_resultPanel lineAvail:it->line]) {
+                    tiLine lend = [self sci:SCI_GETLINEENDPOSITION wParam:(uintptr_t)it->line lParam:0];
+                    tiLine lstart = [self sci:SCI_POSITIONFROMLINE wParam:(uintptr_t)it->line lParam:0];
+                    int lineLength = (int)(lend - lstart);
+                    if (lineLength < 0) lineLength = 0;
+                    std::vector<char> lbuf((size_t)lineLength + 3, 0);
+                    [self sci:SCI_GETLINE wParam:(uintptr_t)it->line lParam:(intptr_t)lbuf.data()];
+                    for (int i = 0; i < lineLength; ++i)
+                        if (lbuf[i] == 0) lbuf[i] = 0x20;   // no embedded NULs
+                    lbuf[lineLength]     = 0x0D;
+                    lbuf[lineLength + 1] = 0x0A;
+                    std::string lineText(lbuf.data(), (size_t)lineLength + 2);  // text + CRLF
+                    [_resultPanel setLineText:it->line text:lineText comment:comment commentWidth:commentWidth];
+                }
+            }
+        } else {
+            [_resultPanel removeUnusedResultLines:iResult.getPatId() old:oldResult new:result];
+        }
+        [_resultPanel updateAfterSearch];
+    }
+}
+
+// Port of AnalysePlugin::doFindPattern. macOS: doc + generic_string are UTF-8,
+// so the Windows WcharMbcsConvertor wchar→char step is dropped entirely.
+- (int)findPattern:(const tclPattern &)pattern into:(tclResult &)result {
+    if (pattern.getDoSearch() == false) { result.clear(); result.setDirty(false); return 0; }
+
+    tiLine startRange = 0;
+    tiLine endRange = [self sci:SCI_GETLENGTH wParam:0 lParam:0];
+    if (endRange < 1) return 0;
+
+    int flags = 0;
+    std::string text;
+    switch (pattern.getSearchType()) {
+        case tclPattern::regex:
+            flags |= (SCFIND_REGEXP | SCFIND_POSIX); text = pattern.getSearchText(); break;
+        case tclPattern::rgx_multiline:
+            flags |= (SCFIND_REGEXP | SCFIND_POSIX | SCFIND_REGEXP_DOTMATCHESNL);
+            text = pattern.getSearchText(); break;
+        case tclPattern::escaped:
+            text = pattern.getSearchTextConverted(); break;   // convertExtendedToString
+        default:
+            text = pattern.getSearchText(); break;
+    }
+    flags |= pattern.getIsMatchCase() ? SCFIND_MATCHCASE : 0;
+    flags |= pattern.getIsWholeWord() ? SCFIND_WHOLEWORD : 0;
+    flags |= SCFIND_REGEXP_EMPTYMATCH_ALL | SCFIND_REGEXP_SKIPCRLFASONE;
+
+    if (text.empty()) { result.setDirty(false); return 0; }
+
+    [self sci:SCI_SETTARGETSTART wParam:(uintptr_t)startRange lParam:0];
+    [self sci:SCI_SETTARGETEND wParam:(uintptr_t)endRange lParam:0];
+    [self sci:SCI_SETSEARCHFLAGS wParam:(uintptr_t)flags lParam:0];
+
+    int nb = 0;
+    tiLine targetStart = [self sci:SCI_SEARCHINTARGET wParam:text.size() lParam:(intptr_t)text.c_str()];
+    while (targetStart >= 0) {
+        if (targetStart == 0) {
+            int st = (int)[self sci:SCI_GETSTATUS wParam:0 lParam:0];
+            if (st != 0 && st != SC_STATUS_OK) {
+                [self sci:SCI_SETSTATUS wParam:SC_STATUS_OK lParam:0];   // clear
+                break;
+            }
+        }
+        targetStart = [self sci:SCI_GETTARGETSTART wParam:0 lParam:0];
+        tiLine targetEnd = [self sci:SCI_GETTARGETEND wParam:0 lParam:0];
+        if (targetEnd > endRange) break;
+        int foundTextLen = (int)(targetEnd - targetStart);
+
+        tiLine lineNumberStart = [self sci:SCI_LINEFROMPOSITION wParam:(uintptr_t)targetStart lParam:0];
+        tiLine lineNumberEnd = [self sci:SCI_LINEFROMPOSITION wParam:(uintptr_t)targetEnd lParam:0];
+        for (tiLine li = lineNumberStart; li <= lineNumberEnd; ++li)
+            result.push_back((int)targetStart, (int)targetEnd, (int)li);
+
+        // Advance. Guard against zero-length (empty regex) matches looping forever.
+        startRange = targetStart + (foundTextLen > 0 ? foundTextLen : 1);
+        if (startRange > endRange) break;
+        [self sci:SCI_SETTARGETSTART wParam:(uintptr_t)startRange lParam:0];
+        [self sci:SCI_SETTARGETEND wParam:(uintptr_t)endRange lParam:0];
+        ++nb;
+        targetStart = [self sci:SCI_SEARCHINTARGET wParam:text.size() lParam:(intptr_t)text.c_str()];
+    }
+    result.setDirty(false);
+    return nb;
+}
+
 // ── Panels ─────────────────────────────────────────────────────────────────
 - (void)ensurePanels {
     if (_editorPanel) return;
@@ -112,6 +277,13 @@ showDialogCmdSlot:(int)slot {
         case NPPN_SHUTDOWN:
             if (_editorHandle) [self npp:NPPM_DMM_UNREGISTERPANEL wParam:(uintptr_t)_editorHandle lParam:0];
             if (_resultHandle) [self npp:NPPM_DMM_UNREGISTERPANEL wParam:(uintptr_t)_resultHandle lParam:0];
+            break;
+        case SCN_UPDATEUI:
+            // Mirror the main editor's vertical scroll into the result window.
+            if (_resultPanel && (n->updated & SC_UPDATE_V_SCROLL)) {
+                tiLine top = [self sci:SCI_GETFIRSTVISIBLELINE wParam:0 lParam:0];
+                [_resultPanel syncFromMainTopLine:top];
+            }
             break;
         default:
             break;

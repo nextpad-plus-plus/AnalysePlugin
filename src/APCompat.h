@@ -58,4 +58,18 @@ inline long generic_strtol(const TCHAR *s, TCHAR **end, int base) {
 }
 inline int generic_atoi(const TCHAR *s) { return std::atoi(s); }
 
+// 64-bit itoa (used by result-line numbering + RTF export).
+inline TCHAR *generic_i64toa(long long val, TCHAR *buf, int radix) {
+    char tmp[32];
+    if (radix == 16)
+        std::snprintf(tmp, sizeof tmp, "%llx", (unsigned long long)val);
+    else
+        std::snprintf(tmp, sizeof tmp, "%lld", val);
+    std::strcpy(buf, tmp);
+    return buf;
+}
+#ifndef _i64toa
+#define _i64toa generic_i64toa
+#endif
+
 #endif // AP_COMPAT_H
