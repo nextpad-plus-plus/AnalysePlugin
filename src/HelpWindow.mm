@@ -1,13 +1,14 @@
-// HelpWindow.mm — see header. Port of the Windows HelpDialog.
+// HelpWindow.mm — see header. Centered About-style header (matching the other
+// released macOS plugins) + a monospaced Manual/Changes text area.
 
 #import "HelpWindow.h"
 #import <dlfcn.h>
-#import <objc/runtime.h>
 
-#define AP_VERSION      @"1.14"
-#define AP_AUTHOR       @"Matthias Hessling"
-#define AP_EMAIL        @"mattesh@gmx.net"
-#define AP_HOMEPAGE     @"https://analyseplugin.sourceforge.io/"
+#define AP_VERSION   @"1.0.0"
+#define AP_PROJECT   @"https://github.com/nextpad-plus-plus/AnalysePlugin"
+#define AP_DESC      @"Native macOS port of the Notepad++ Analyse Plugin. Dockable "\
+                      "multi-pattern search with per-pattern colors, a results panel, "\
+                      "and double-click jump to the matching line."
 
 // Directory the plugin dylib lives in (manual.txt / changes.txt are installed there).
 static NSString *pluginDir(void) {
@@ -16,7 +17,6 @@ static NSString *pluginDir(void) {
         return [@(info.dli_fname) stringByDeletingLastPathComponent];
     return nil;
 }
-
 static NSString *readDoc(NSString *name) {
     NSString *dir = pluginDir();
     if (!dir) return @"";
@@ -32,14 +32,14 @@ static NSString *readDoc(NSString *name) {
 }
 
 - (instancetype)init {
-    NSRect frame = NSMakeRect(0, 0, 640, 460);
+    NSRect frame = NSMakeRect(0, 0, 600, 520);
     NSWindow *win = [[NSPanel alloc] initWithContentRect:frame
         styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                    NSWindowStyleMaskResizable | NSWindowStyleMaskUtilityWindow)
           backing:NSBackingStoreBuffered defer:NO];
-    win.title = @"Analyse Plugin Help";
+    win.title = @"About Analyse Plugin";
     win.releasedWhenClosed = NO;
-    win.minSize = NSMakeSize(420, 280);
+    win.minSize = NSMakeSize(440, 360);
     if ((self = [super initWithWindow:win])) {
         _manual = readDoc(@"manual.txt");
         _changes = readDoc(@"changes.txt");
@@ -52,94 +52,108 @@ static NSString *readDoc(NSString *name) {
 - (void)buildUI {
     NSView *c = self.window.contentView;
 
-    NSTextField *title = [NSTextField labelWithString:@"Analyse Plugin for Notepad++"];
-    title.font = [NSFont boldSystemFontOfSize:16];
+    // ── Centered About header (matches the other released plugins) ───────────
+    NSTextField *title = [NSTextField labelWithString:@"Analyse Plugin for macOS"];
+    title.font = [NSFont boldSystemFontOfSize:18];
+    title.alignment = NSTextAlignmentCenter;
     title.translatesAutoresizingMaskIntoConstraints = NO;
-    [c addSubview:title];
 
-    NSTextField *ver = [NSTextField labelWithString:[NSString stringWithFormat:@"Version:  %@  (macOS port)", AP_VERSION]];
-    NSTextField *auth = [NSTextField labelWithString:[NSString stringWithFormat:@"Author:   %@", AP_AUTHOR]];
-    // email + homepage as clickable links
-    NSTextField *email = [self linkLabel:[@"mailto:" stringByAppendingString:AP_EMAIL] display:[@"eMail:    " stringByAppendingString:AP_EMAIL]];
-    NSTextField *url = [self linkLabel:AP_HOMEPAGE display:[@"URL:      " stringByAppendingString:AP_HOMEPAGE]];
-    for (NSTextField *l in @[ver, auth]) {
-        l.font = [NSFont systemFontOfSize:11];
-        l.translatesAutoresizingMaskIntoConstraints = NO;
-        [c addSubview:l];
-    }
-    [c addSubview:email];
-    [c addSubview:url];
+    NSTextField *desc = [NSTextField wrappingLabelWithString:AP_DESC];
+    desc.font = [NSFont systemFontOfSize:13];
+    desc.alignment = NSTextAlignmentCenter;
+    desc.selectable = NO;
+    desc.translatesAutoresizingMaskIntoConstraints = NO;
 
-    NSButton *manualBtn = [NSButton buttonWithTitle:@"Manual" target:self action:@selector(showManual:)];
-    NSButton *changesBtn = [NSButton buttonWithTitle:@"Changes" target:self action:@selector(showChanges:)];
-    NSButton *closeBtn = [NSButton buttonWithTitle:@"Close" target:self action:@selector(closeHelp:)];
+    NSTextField *ported = [NSTextField labelWithString:@"ported by Andrey Letov"];
+    ported.font = [NSFont systemFontOfSize:12];
+    ported.alignment = NSTextAlignmentCenter;
+    ported.translatesAutoresizingMaskIntoConstraints = NO;
+
+    NSTextField *ver = [NSTextField labelWithString:[@"Version " stringByAppendingString:AP_VERSION]];
+    ver.font = [NSFont systemFontOfSize:12];
+    ver.alignment = NSTextAlignmentCenter;
+    ver.translatesAutoresizingMaskIntoConstraints = NO;
+
+    NSButton *project = [NSButton buttonWithTitle:[@"Project: " stringByAppendingString:AP_PROJECT]
+                                           target:self action:@selector(openProject:)];
+    project.bezelStyle = NSBezelStyleInline;
+    project.bordered = NO;
+    project.font = [NSFont systemFontOfSize:12];
+    project.contentTintColor = [NSColor linkColor];
+    project.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // ── Manual / Changes buttons ─────────────────────────────────────────────
+    NSButton *manualBtn = [self smallButton:@"Manual" action:@selector(showManual:)];
+    NSButton *changesBtn = [self smallButton:@"Changes" action:@selector(showChanges:)];
+    NSButton *closeBtn = [self smallButton:@"Close" action:@selector(closeHelp:)];
     closeBtn.keyEquivalent = @"\033";
-    for (NSButton *b in @[manualBtn, changesBtn, closeBtn]) {
-        b.bezelStyle = NSBezelStyleRounded;
-        b.translatesAutoresizingMaskIntoConstraints = NO;
-        [c addSubview:b];
-    }
 
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    // ── Manual/Changes text area ─────────────────────────────────────────────
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 560, 280)];
     scroll.hasVerticalScroller = YES;
     scroll.autohidesScrollers = YES;
     scroll.borderType = NSBezelBorder;
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
-    _textView = [[NSTextView alloc] initWithFrame:NSZeroRect];
+
+    _textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 560, 280)];
     _textView.editable = NO;
     _textView.richText = NO;
-    _textView.font = [NSFont userFixedPitchFontOfSize:11];   // monospaced, like Windows "Courier New"
-    _textView.automaticQuoteSubstitutionEnabled = NO;
+    _textView.font = [NSFont userFixedPitchFontOfSize:11];   // monospaced (≈ Courier New)
+    _textView.minSize = NSMakeSize(0, 0);
+    _textView.maxSize = NSMakeSize(FLT_MAX, FLT_MAX);
+    _textView.verticallyResizable = YES;                     // (the missing bit — text was 0-height)
     _textView.horizontallyResizable = NO;
+    _textView.autoresizingMask = NSViewWidthSizable;
+    _textView.textContainerInset = NSMakeSize(4, 4);
+    _textView.textContainer.widthTracksTextView = YES;
     scroll.documentView = _textView;
-    [c addSubview:scroll];
+
+    for (NSView *v in @[title, desc, ported, ver, project, manualBtn, changesBtn, closeBtn, scroll])
+        [c addSubview:v];
 
     [NSLayoutConstraint activateConstraints:@[
-        [title.topAnchor constraintEqualToAnchor:c.topAnchor constant:12],
-        [title.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:14],
+        [title.topAnchor constraintEqualToAnchor:c.topAnchor constant:16],
+        [title.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:20],
+        [title.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-20],
 
-        [ver.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:8],
-        [ver.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:14],
-        [auth.topAnchor constraintEqualToAnchor:ver.bottomAnchor constant:3],
-        [auth.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:14],
-        [email.topAnchor constraintEqualToAnchor:auth.bottomAnchor constant:3],
-        [email.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:14],
-        [url.topAnchor constraintEqualToAnchor:email.bottomAnchor constant:3],
-        [url.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:14],
+        [desc.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:10],
+        [desc.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:30],
+        [desc.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-30],
 
-        [manualBtn.topAnchor constraintEqualToAnchor:url.bottomAnchor constant:10],
-        [manualBtn.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:14],
+        [ported.topAnchor constraintEqualToAnchor:desc.bottomAnchor constant:12],
+        [ported.centerXAnchor constraintEqualToAnchor:c.centerXAnchor],
+        [ver.topAnchor constraintEqualToAnchor:ported.bottomAnchor constant:4],
+        [ver.centerXAnchor constraintEqualToAnchor:c.centerXAnchor],
+        [project.topAnchor constraintEqualToAnchor:ver.bottomAnchor constant:2],
+        [project.centerXAnchor constraintEqualToAnchor:c.centerXAnchor],
+
+        [manualBtn.topAnchor constraintEqualToAnchor:project.bottomAnchor constant:14],
+        [manualBtn.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:20],
         [changesBtn.centerYAnchor constraintEqualToAnchor:manualBtn.centerYAnchor],
         [changesBtn.leadingAnchor constraintEqualToAnchor:manualBtn.trailingAnchor constant:8],
 
         [scroll.topAnchor constraintEqualToAnchor:manualBtn.bottomAnchor constant:10],
-        [scroll.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:14],
-        [scroll.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-14],
+        [scroll.leadingAnchor constraintEqualToAnchor:c.leadingAnchor constant:20],
+        [scroll.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-20],
         [scroll.bottomAnchor constraintEqualToAnchor:closeBtn.topAnchor constant:-10],
 
-        [closeBtn.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-14],
-        [closeBtn.bottomAnchor constraintEqualToAnchor:c.bottomAnchor constant:-12],
+        [closeBtn.trailingAnchor constraintEqualToAnchor:c.trailingAnchor constant:-20],
+        [closeBtn.bottomAnchor constraintEqualToAnchor:c.bottomAnchor constant:-14],
         [closeBtn.widthAnchor constraintEqualToConstant:84],
     ]];
 }
 
-- (NSTextField *)linkLabel:(NSString *)urlStr display:(NSString *)display {
-    NSTextField *l = [NSTextField labelWithString:display];
-    l.font = [NSFont systemFontOfSize:11];
-    l.translatesAutoresizingMaskIntoConstraints = NO;
-    l.selectable = YES;
-    // simple click-to-open via a gesture
-    NSClickGestureRecognizer *g = [[NSClickGestureRecognizer alloc] initWithTarget:self action:@selector(openLink:)];
-    g.numberOfClicksRequired = 1;
-    l.toolTip = urlStr;
-    objc_setAssociatedObject(l, "url", urlStr, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    [l addGestureRecognizer:g];
-    return l;
+- (NSButton *)smallButton:(NSString *)title action:(SEL)sel {
+    NSButton *b = [NSButton buttonWithTitle:title target:self action:sel];
+    b.bezelStyle = NSBezelStyleRounded;
+    b.controlSize = NSControlSizeRegular;
+    b.font = [NSFont systemFontOfSize:13];
+    b.translatesAutoresizingMaskIntoConstraints = NO;
+    return b;
 }
 
-- (void)openLink:(NSClickGestureRecognizer *)g {
-    NSString *u = objc_getAssociatedObject(g.view, "url");
-    if (u) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:u]];
+- (void)openProject:(id)sender {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:AP_PROJECT]];
 }
 
 - (void)showText:(NSString *)t {
