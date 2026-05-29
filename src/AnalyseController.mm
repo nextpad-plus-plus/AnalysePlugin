@@ -4,6 +4,7 @@
 #import "ResultPanelView.h"
 #import "PatternEditorView.h"
 #import "OptionsWindow.h"
+#import "HelpWindow.h"
 #include "Scintilla.h"
 #include "BoostRegexSearch.h"   // SCFIND_REGEXP_DOTMATCHESNL / EMPTYMATCH_ALL / SKIPCRLFASONE
 #include "tclPattern.h"
@@ -36,6 +37,7 @@ extern NppData nppData;
     BOOL      _bookmarkIdResolved;
     NSString *_lastSearchFile;
     OptionsWindow *_optionsWindow;
+    HelpWindow    *_helpWindow;
 }
 
 // Default settings (mirror the Windows ConfigDialog ctor + Image #2).
@@ -373,8 +375,8 @@ showDialogCmdSlot:(int)slot {
 }
 
 - (void)cmdShowHelp {
-    // HelpWindow lands in a later phase.
-    NSLog(@"[AnalysePlugin] Help… (pending)");
+    _helpWindow = [[HelpWindow alloc] init];   // strong ref keeps it alive
+    [_helpWindow showHelp];
 }
 
 @end

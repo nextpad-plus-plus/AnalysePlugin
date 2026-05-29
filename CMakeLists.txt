@@ -33,6 +33,7 @@ add_library(AnalysePlugin SHARED
     # XML config (kept wire-compatible with AnalyseDoc.xsd via NSXMLDocument)
     src/FindConfigDoc.mm
     src/OptionsWindow.mm
+    src/HelpWindow.mm
     # ── Pending phases (uncomment as each lands) ──
     # src/OptionsWindow.mm
     # src/HelpWindow.mm
@@ -64,3 +65,6 @@ set_target_properties(AnalysePlugin PROPERTIES PREFIX "" SUFFIX ".dylib")
 
 set(PLUGIN_INSTALL_DIR "$ENV{HOME}/.nextpad++/plugins/AnalysePlugin")
 install(TARGETS AnalysePlugin DESTINATION "${PLUGIN_INSTALL_DIR}")
+# The Help dialog reads these from next to the dylib at runtime.
+install(FILES manual.txt changes.txt readme.txt license.txt
+        DESTINATION "${PLUGIN_INSTALL_DIR}")
