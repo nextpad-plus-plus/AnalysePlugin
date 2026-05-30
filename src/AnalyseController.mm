@@ -35,6 +35,8 @@ extern NppData nppData;
 
     intptr_t  _bookmarkId;
     BOOL      _bookmarkIdResolved;
+    intptr_t  _matchMarkerId;
+    BOOL      _matchMarkerResolved;
     NSString *_lastSearchFile;
     OptionsWindow *_optionsWindow;
     HelpWindow    *_helpWindow;
@@ -149,6 +151,34 @@ showDialogCmdSlot:(int)slot {
     return buf[0] ? @(buf) : @"";
 }
 
+- (intptr_t)matchMarkerId {
+    if (!_matchMarkerResolved) {
+        int mk = -1;
+        // Ask the host for a free marker so we never collide with bookmarks /
+        // change-history / folding markers.
+        if ([self npp:NPPM_ALLOCATEMARKER wParam:1 lParam:(intptr_t)&mk] && mk >= 0)
+            _matchMarkerId = mk;
+        else
+            _matchMarkerId = 17;   // fallback: markers 0..17 are free in NPP
+        _matchMarkerResolved = YES;
+    }
+    return _matchMarkerId;
+}
+
+// Define our marker as a green (#a2c200) vertical left-bar and add it to the
+// change-history margin (margin 2) on the active editor, so matched lines show a
+// bar right where NPP draws the orange "modified" bars — matching Windows.
+- (void)ensureMatchMarkerOnActiveEditor {
+    intptr_t mk = [self matchMarkerId];
+    [self sci:SCI_MARKERDEFINE wParam:(uintptr_t)mk lParam:SC_MARK_LEFTRECT];
+    // #a2c200 → Scintilla COLORREF 0x00BBGGRR = 0x00C2A2
+    [self sci:SCI_MARKERSETBACK wParam:(uintptr_t)mk lParam:0x00C2A2];
+    intptr_t mask = [self sci:SCI_GETMARGINMASKN wParam:2 lParam:0];
+    [self sci:SCI_SETMARGINMASKN wParam:2 lParam:(intptr_t)(mask | (1 << mk))];
+    if ([self sci:SCI_GETMARGINWIDTHN wParam:2 lParam:0] == 0)
+        [self sci:SCI_SETMARGINWIDTHN wParam:2 lParam:3];   // ensure the thin margin is visible
+}
+
 // ── Search engine (port of AnalysePlugin::doSearch) ────────────────────────
 - (void)doSearch {
     if (!_editorPanel || !_resultPanel) return;
@@ -159,6 +189,7 @@ showDialogCmdSlot:(int)slot {
 
     NSString *path = [self currentFilePath];
     [_resultPanel setSearchFileName:path];
+    [self ensureMatchMarkerOnActiveEditor];   // green match bars in the change-history margin
 
     // Line-number column width from the active document's line count.
     tiLine numLines = [self sci:SCI_GETLINECOUNT wParam:0 lParam:0];

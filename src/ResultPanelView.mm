@@ -182,7 +182,7 @@
     [self setMarkedLineInMain:-1];
     _findResults.clear();
     if (_useBookmark && !initial)
-        [_controller sci:SCI_MARKERDELETEALL wParam:(uintptr_t)[_controller bookmarkId] lParam:0];
+        [_controller sci:SCI_MARKERDELETEALL wParam:(uintptr_t)[_controller matchMarkerId] lParam:0];
     if (_sci) {
         [self setReadOnly:NO];
         [self sci:SCI_CLEARALL wParam:0 lParam:0];
@@ -221,7 +221,7 @@
 
     if (bNewLine) {
         if (_useBookmark)
-            [_controller sci:SCI_MARKERADD wParam:(uintptr_t)foundLine lParam:[_controller bookmarkId]];
+            [_controller sci:SCI_MARKERADD wParam:(uintptr_t)foundLine lParam:[_controller matchMarkerId]];
         [self sci:SCI_INSERTTEXT wParam:(uintptr_t)startPos lParam:(intptr_t)s.c_str()];
         ++_lineCounter;
     } else {
@@ -247,7 +247,7 @@
         tiLine resultLine = _findResults.getLineNoAtRes(thisLine);
         if (resultLine >= 0) {
             if (_useBookmark)
-                [_controller sci:SCI_MARKERDELETE wParam:(uintptr_t)thisLine lParam:[_controller bookmarkId]];
+                [_controller sci:SCI_MARKERDELETE wParam:(uintptr_t)thisLine lParam:[_controller matchMarkerId]];
             tiLine startL = [self sci:SCI_POSITIONFROMLINE wParam:(uintptr_t)resultLine lParam:0];
             tiLine endL = [self sci:SCI_GETLINEENDPOSITION wParam:(uintptr_t)resultLine lParam:0];
             if (endL + 2 <= [self sci:SCI_GETLENGTH wParam:0 lParam:0]) endL += 2;

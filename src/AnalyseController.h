@@ -42,6 +42,11 @@ showDialogCmdSlot:(int)slot;
 - (NppHandle)activeScintilla;
 // The host's bookmark marker id (NPPM_GETBOOKMARKID), cached.
 - (intptr_t)bookmarkId;
+// Plugin's own allocated "match" marker (green #a2c200 left-bar in the change-
+// history margin, like Windows) — does not collide with user bookmarks.
+- (intptr_t)matchMarkerId;
+// Define the match marker + add it to the change-history margin on the active editor.
+- (void)ensureMatchMarkerOnActiveEditor;
 // Full path of the active document (empty for untitled).
 - (NSString *)currentFilePath;
 // The plugin's config directory (~/.nextpad++/plugins/Config/AnalysePlugin/).
