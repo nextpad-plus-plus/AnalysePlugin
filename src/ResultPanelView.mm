@@ -72,6 +72,13 @@
     return self;
 }
 
+// Report close-via-X to the controller (the host hides the view without
+// notifying the plugin). The controller debounces to ignore pop-outs.
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window == nil) [_controller panelViewDidDetach:self];
+}
+
 // transStyleIdTab: 1..31 then 40..255 (skip Scintilla-reserved 32..39).
 - (void)buildStyleIdTable {
     int v = 0;

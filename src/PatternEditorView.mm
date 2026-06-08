@@ -77,6 +77,15 @@ static NSString *const kColComment = @"Comment";
     return self;
 }
 
+// The host removes a docked panel's view from the window when its close X is
+// clicked, without notifying the plugin. Report it so the controller can clear
+// the menu checkmark. (window != nil after a pop-out, which the controller
+// debounces and ignores.)
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window == nil) [_controller panelViewDidDetach:self];
+}
+
 - (tclResultList &)resultListRef { return _resultList; }
 - (const tclPattern &)defaultPattern { return _defaultPattern; }
 - (void)setDefaultPattern:(const tclPattern &)p { _defaultPattern = p; [self controlsFromPattern:p]; }
@@ -217,6 +226,23 @@ static NSTextField *mkLabel(NSString *s) {
     }
     scroll.documentView = _table;
 
+    // ── toolbar strip (single button: toggle the Analyse Result panel) ───────
+    // Mirrors the NppFTP in-panel toolbar style (borderless square SF-symbol
+    // buttons in a fixed-height strip). One icon for now, as a safety net so
+    // the result panel can always be reopened after it's been closed.
+    NSView *toolbar = [[NSView alloc] initWithFrame:NSZeroRect];
+    toolbar.translatesAutoresizingMaskIntoConstraints = NO;
+    NSButton *resultsBtn = [NSButton buttonWithTitle:@"" target:self action:@selector(onToggleResults:)];
+    NSImage *resultsImg = [NSImage imageWithSystemSymbolName:@"list.bullet.rectangle"
+                                   accessibilityDescription:@"Toggle Analyse Results panel"];
+    if (resultsImg) { resultsBtn.image = resultsImg; resultsBtn.imagePosition = NSImageOnly; }
+    else            { resultsBtn.title = @"Results"; resultsBtn.font = [NSFont systemFontOfSize:9]; }
+    resultsBtn.bezelStyle = NSBezelStyleRegularSquare;
+    resultsBtn.bordered = NO;
+    resultsBtn.toolTip = @"Toggle Analyse Results panel";
+    resultsBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [toolbar addSubview:resultsBtn];
+
     // ── assemble with Auto Layout ────────────────────────────────────────────
     NSArray *allViews = @[_searchText, typeLbl, _searchType, _caseChk, _wholeWordChk,
                           orderLbl, _orderNum, groupLbl, _group, commentLbl, _comment,
@@ -224,12 +250,23 @@ static NSTextField *mkLabel(NSString *s) {
                           selLbl, _selection, add, up, down, load, update, order, save,
                           del, clear, search, scroll];
     for (NSView *v in allViews) [self addSubview:v];
+    [self addSubview:toolbar];
 
     CGFloat M = 6;     // left margin
     id sa = self.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        // search text — full width, top
-        [_searchText.topAnchor constraintEqualToAnchor:[sa topAnchor] constant:6],
+        // toolbar strip pinned to the very top, full width
+        [toolbar.topAnchor constraintEqualToAnchor:[sa topAnchor]],
+        [toolbar.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [toolbar.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [toolbar.heightAnchor constraintEqualToConstant:28],
+        [resultsBtn.leadingAnchor constraintEqualToAnchor:toolbar.leadingAnchor constant:6],
+        [resultsBtn.centerYAnchor constraintEqualToAnchor:toolbar.centerYAnchor],
+        [resultsBtn.widthAnchor constraintEqualToConstant:28],
+        [resultsBtn.heightAnchor constraintEqualToConstant:24],
+
+        // search text — full width, below the toolbar
+        [_searchText.topAnchor constraintEqualToAnchor:toolbar.bottomAnchor constant:6],
         [_searchText.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:M],
         [_searchText.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-M],
 
@@ -452,6 +489,8 @@ static NSTextField *mkLabel(NSString *s) {
 
 - (void)onSearch:(id)sender { [self runSearch]; }
 
+- (void)onToggleResults:(id)sender { [_controller toggleResultPanel]; }
+
 - (void)onOrder:(id)sender {
     NSButton *b = sender;
     NSMenu *menu = [[NSMenu alloc] init];
@@ -603,6 +642,7 @@ static NSTextField *mkLabel(NSString *s) {
 }
 
 - (void)runSearch {
+    [_controller ensureResultPanelVisible];   // open the result panel if it was closed
     [_controller doSearch];
     [self reloadTable];   // refresh Hits column etc.
 }

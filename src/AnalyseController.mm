@@ -30,8 +30,10 @@ extern NppData nppData;
     ResultPanelView   *_resultPanel;
     uint64_t           _editorHandle;
     uint64_t           _resultHandle;
-    BOOL               _panelsVisible;
+    BOOL               _panelsVisible;   // editor (main) panel == the "dialog" the menu tracks
+    BOOL               _resultVisible;   // Analyse Result panel shown independently
     BOOL               _ready;
+    BOOL               _shuttingDown;
 
     intptr_t  _bookmarkId;
     BOOL      _bookmarkIdResolved;
@@ -337,7 +339,48 @@ showDialogCmdSlot:(int)slot {
     if (_editorHandle) [self npp:msg wParam:(uintptr_t)_editorHandle lParam:0];
     if (_resultHandle) [self npp:msg wParam:(uintptr_t)_resultHandle lParam:0];
     _panelsVisible = visible;
+    _resultVisible = visible;
     [self syncMenuCheck];
+}
+
+// Make the Analyse Result panel visible if it isn't. NPPM_DMM_SHOWPANEL is
+// idempotent, so this is "open if hidden, no-op if already shown".
+- (void)ensureResultPanelVisible {
+    [self ensurePanels];
+    if (!_resultVisible && _resultHandle) {
+        [self npp:NPPM_DMM_SHOWPANEL wParam:(uintptr_t)_resultHandle lParam:0];
+        _resultVisible = YES;
+    }
+}
+
+// Toggle only the Analyse Result panel (the editor-panel toolbar button).
+- (void)toggleResultPanel {
+    [self ensurePanels];
+    BOOL show = !_resultVisible;
+    if (_resultHandle)
+        [self npp:(show ? NPPM_DMM_SHOWPANEL : NPPM_DMM_HIDEPANEL)
+              wParam:(uintptr_t)_resultHandle lParam:0];
+    _resultVisible = show;
+}
+
+// A panel view left its window — the user clicked its close X (the host hides
+// the view but never tells us). Debounce one runloop turn so a pop-out (which
+// transiently detaches, then reattaches to a floating window) is not mistaken
+// for a close.
+- (void)panelViewDidDetach:(NSView *)view {
+    if (_shuttingDown || !view) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_shuttingDown) return;
+        if (view.window != nil) return;   // reattached (popped out) — still visible
+        if (view == self->_editorPanel) {
+            if (self->_panelsVisible) {
+                self->_panelsVisible = NO;
+                [self syncMenuCheck];
+            }
+        } else if (view == self->_resultPanel) {
+            self->_resultVisible = NO;
+        }
+    });
 }
 
 - (void)syncMenuCheck {
@@ -362,9 +405,11 @@ showDialogCmdSlot:(int)slot {
             [_editorPanel loadFromPath:[self autoConfigPath]];   // restore last pattern list
             [self applySettings];                                // apply saved options to panels
             _panelsVisible = NO;
+            _resultVisible = NO;
             [self syncMenuCheck];
             break;
         case NPPN_SHUTDOWN:
+            _shuttingDown = YES;
             [_editorPanel saveToPath:[self autoConfigPath]];     // persist pattern list
             if (_editorHandle) [self npp:NPPM_DMM_UNREGISTERPANEL wParam:(uintptr_t)_editorHandle lParam:0];
             if (_resultHandle) [self npp:NPPM_DMM_UNREGISTERPANEL wParam:(uintptr_t)_resultHandle lParam:0];

@@ -33,6 +33,16 @@ showDialogCmdSlot:(int)slot;
 - (void)cmdShowOptions;
 - (void)cmdShowHelp;
 
+// ── Result-panel control ───────────────────────────────────────────────────
+// Toggle just the Analyse Result panel (toolbar button on the editor panel).
+- (void)toggleResultPanel;
+// Make the Analyse Result panel visible if it isn't (called when a search runs).
+- (void)ensureResultPanelVisible;
+// A panel's NSView left its window (closed via its title-bar X). The host does
+// not notify plugins of this, so the panels report it here to keep the menu
+// checkmark / visibility flags in sync.
+- (void)panelViewDidDetach:(NSView *)view;
+
 // ── Host messaging helpers (used by the panels) ────────────────────────────
 // Send to the Notepad++ main handle (NPPM_* messages).
 - (intptr_t)npp:(uint32_t)msg wParam:(uintptr_t)wParam lParam:(intptr_t)lParam;
