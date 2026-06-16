@@ -1,3 +1,11 @@
+macOS port changes
+ - 1.0.2: config now resolves via the host (NPPM_GETPLUGINSCONFIGDIR); no longer
+   hardcodes the legacy ~/.nextpad++ folder. Plugin data lives under
+   ~/Library/Application Support/Nextpad++/plugins/Config/AnalysePlugin/ on
+   Nextpad++ 1.0.8+ (the host migrates existing data automatically).
+ - 1.0.1: result-panel toolbar; Search auto-shows results; menu-check fix
+ - 1.0.0: initial macOS release
+
 Changes since 1.14
  - #95 fix crash in case of new AP with old NPP in clipboard copy function
  - #94 workaround for black combobox

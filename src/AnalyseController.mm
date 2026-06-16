@@ -17,7 +17,8 @@ extern NppData nppData;
 @interface AnalyseController ()
 // Search one pattern over the active document; fills result. Returns hit count.
 - (int)findPattern:(const tclPattern &)pattern into:(tclResult &)result;
-// Auto-persisted pattern list file (~/.nextpad++/plugins/Config/AnalysePlugin/AnalysePlugin.xml).
+// Auto-persisted pattern list file, under the host's plugin config dir
+// (NPPM_GETPLUGINSCONFIGDIR)/AnalysePlugin/AnalysePlugin.xml.
 - (NSString *)autoConfigPath;
 @end
 
@@ -124,9 +125,16 @@ showDialogCmdSlot:(int)slot {
 - (NSString *)configDir {
     char buf[2048] = {0};
     [self npp:NPPM_GETPLUGINSCONFIGDIR wParam:sizeof(buf) lParam:(intptr_t)buf];
+    // Always resolve from the host — it returns the correct location on every host
+    // version (~/.nextpad++/plugins/Config on ≤1.0.7, ~/Library/Application Support/
+    // Nextpad++/plugins/Config on 1.0.8+). The fallback below is only reached if the
+    // host ever returns empty (it does not on shipped versions); it points at the
+    // macOS app-support base, NOT a legacy ~/.nextpad++ dot-folder.
     NSString *parent = (buf[0] != 0)
         ? @(buf)
-        : [NSHomeDirectory() stringByAppendingPathComponent:@".nextpad++/plugins/Config"];
+        : [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,
+              NSUserDomainMask, YES).firstObject
+              stringByAppendingPathComponent:@"Nextpad++/plugins/Config"];
     NSString *dir = [parent stringByAppendingPathComponent:@"AnalysePlugin"];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                               withIntermediateDirectories:YES

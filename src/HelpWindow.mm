@@ -4,7 +4,7 @@
 #import "HelpWindow.h"
 #import <dlfcn.h>
 
-#define AP_VERSION   @"1.0.0"
+#define AP_VERSION   @"1.0.2"
 #define AP_PROJECT   @"https://github.com/nextpad-plus-plus/AnalysePlugin"
 #define AP_DESC      @"Native macOS port of the Notepad++ Analyse Plugin. Dockable "\
                       "multi-pattern search with per-pattern colors, a results panel, "\

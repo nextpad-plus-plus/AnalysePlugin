@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(AnalysePlugin LANGUAGES CXX OBJCXX)
+
+# Plugin version — stamped into the dylib's mach-o LC_ID_DYLIB current_version so
+# the host's Plugins Admin "Installed" tab shows the real X.Y.Z. Keep in sync with
+# the catalog macVersion. mach-o packs this 16.8.8 (X<=65535, Y<=255, Z<=255).
+set(PLUGIN_VERSION "1.0.2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OBJCXX_STANDARD 17)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -63,7 +68,10 @@ target_compile_options(AnalysePlugin PRIVATE
 
 set_target_properties(AnalysePlugin PROPERTIES PREFIX "" SUFFIX ".dylib")
 
-set(PLUGIN_INSTALL_DIR "$ENV{HOME}/.nextpad++/plugins/AnalysePlugin")
+# Stamp the version into the dylib (read by the host's Plugins Admin Installed tab).
+target_link_options(AnalysePlugin PRIVATE "-Wl,-current_version,${PLUGIN_VERSION}")
+
+set(PLUGIN_INSTALL_DIR "$ENV{HOME}/Library/Application Support/Nextpad++/plugins/AnalysePlugin")
 install(TARGETS AnalysePlugin DESTINATION "${PLUGIN_INSTALL_DIR}")
 # The Help dialog reads these from next to the dylib at runtime.
 install(FILES manual.txt changes.txt readme.txt license.txt

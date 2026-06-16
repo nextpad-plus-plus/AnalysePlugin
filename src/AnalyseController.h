@@ -59,7 +59,8 @@ showDialogCmdSlot:(int)slot;
 - (void)ensureMatchMarkerOnActiveEditor;
 // Full path of the active document (empty for untitled).
 - (NSString *)currentFilePath;
-// The plugin's config directory (~/.nextpad++/plugins/Config/AnalysePlugin/).
+// The plugin's config directory: (NPPM_GETPLUGINSCONFIGDIR)/AnalysePlugin/,
+// i.e. ~/Library/Application Support/Nextpad++/plugins/Config/AnalysePlugin/ on host 1.0.8+.
 - (NSString *)configDir;
 
 // Run the multi-pattern search over the active document (port of doSearch).
